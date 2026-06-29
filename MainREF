@@ -10,6 +10,7 @@ local SUGGESTION_COUNT = 20
 local WORD_DATABASE_URL_JSON = "https://raw.githubusercontent.com/dwyl/english-words/refs/heads/master/words_dictionary.json"
 local WORD_DATABASE_URL_TXT = "https://raw.githubusercontent.com/dwyl/english-words/refs/heads/master/words_alpha.txt"
 local WORD_DATABASE_URL_CUSTOM = "https://raw.githubusercontent.com/blyibubik-boop/Game-Dict/refs/heads/main/Dictionary"
+local WORD_DATABASE_LOCAL = "677-WORDLIST.txt" -- Local file name
 
 local usedWords = {}
 local submittedWords = {}
@@ -38,7 +39,7 @@ local pickupLines = {
     "are you a syllable? because you make me want to say more",
     "if you were a word, you'd be in every dictionary",
     "you're the reason I love language",
-    "are you a period? because you stop me in my tracks",
+    "are you a period? because you stop me in your tracks",
     "you make my heart race like autocorrect on a typo",
     "I'd memorize you like a spelling bee champion",
     "you're more valuable than a winning Scrabble tile",
@@ -615,7 +616,7 @@ local statusLabel = Instance.new("TextLabel")
 statusLabel.Size = UDim2.new(1, -12, 0, 28)
 statusLabel.Position = UDim2.new(0, 6, 0, 4)
 statusLabel.BackgroundColor3 = Color3.fromRGB(25, 15, 35)
-statusLabel.Text = "loading triple dictionaries kollega"
+statusLabel.Text = "loading dictionaries kollega"
 statusLabel.TextColor3 = Color3.fromRGB(200, 180, 220)
 statusLabel.TextSize = 10
 statusLabel.Font = Enum.Font.Gotham
@@ -924,7 +925,7 @@ local infoText = Instance.new("TextLabel")
 infoText.Size = UDim2.new(1, -16, 0, 55)
 infoText.Position = UDim2.new(0, 8, 0, 220)
 infoText.BackgroundTransparency = 1
-infoText.Text = "click any word to auto-type kollega\npink = letters you already typed\n3 dictionaries merged = 740k+ words\nthe system will react to your words"
+infoText.Text = "click any word to auto-type kollega\npink = letters you already typed\n3 dictionaries merged + local = 740k+ words\nthe system will react to your words"
 infoText.TextColor3 = Color3.fromRGB(200, 180, 220)
 infoText.TextSize = 9
 infoText.Font = Enum.Font.Gotham
@@ -1053,16 +1054,51 @@ local function LoadCustomDictionary(url)
     return words
 end
 
+local function LoadLocalDictionary(filename)
+    local success, content = pcall(function()
+        return game:HttpGet("rbxassetid://" .. filename) -- Try loading from asset
+    end)
+    
+    if not success then
+        -- Try loading directly from file path
+        success, content = pcall(function()
+            return readfile(filename)
+        end)
+    end
+    
+    if not success then
+        return nil
+    end
+    
+    local words = {}
+    local lineNum = 0
+    for line in content:gmatch("[^\r\n]+") do
+        lineNum = lineNum + 1
+        -- Skip lines that start with '[' (like [UPDATE: 50], [WARNING], etc.)
+        if not string.match(line, "^%[") then
+            local word = line:gsub("%s+", ""):lower()
+            if word:match("^[a-z]+$") and #word >= 2 and #word <= 20 then
+                words[word] = true
+            end
+        end
+    end
+    
+    return words
+end
+
 task.spawn(function()
-    statusLabel.Text = "loading dictionary 1/3 kollega"
+    statusLabel.Text = "loading dictionaries kollega"
     
     local jsonWords = LoadDictionaryFromJSON(WORD_DATABASE_URL_JSON)
     
-    statusLabel.Text = "loading dictionary 2/3 king"
+    statusLabel.Text = "loading online dictionaries..."
     local txtWords = LoadDictionaryFromTXT(WORD_DATABASE_URL_TXT)
     
-    statusLabel.Text = "loading dictionary 3/3 gang"
+    statusLabel.Text = "loading custom dictionaries..."
     local customWords = LoadCustomDictionary(WORD_DATABASE_URL_CUSTOM)
+    
+    statusLabel.Text = "loading local file: 677-WORDLIST.txt..."
+    local localWords = LoadLocalDictionary(WORD_DATABASE_LOCAL)
     
     local wordMap = {}
     local count = 0
@@ -1085,7 +1121,7 @@ task.spawn(function()
                 newCount = newCount + 1
             end
         end
-        statusLabel.Text = "merged! +" .. newCount .. " new words"
+        statusLabel.Text = "txt +" .. newCount .. " new words"
         count = count + newCount
     end
     
@@ -1097,8 +1133,22 @@ task.spawn(function()
                 newCount = newCount + 1
             end
         end
-        statusLabel.Text = "custom words added! +" .. newCount .. " words"
+        statusLabel.Text = "custom +" .. newCount .. " words"
         count = count + newCount
+    end
+    
+    if localWords then
+        local newCount = 0
+        for word in pairs(localWords) do
+            if not wordMap[word] then
+                wordMap[word] = true
+                newCount = newCount + 1
+            end
+        end
+        statusLabel.Text = "local file (677-WORDLIST.txt) +" .. newCount .. " words"
+        count = count + newCount
+    else
+        statusLabel.Text = "could not load local file, skipping..."
     end
     
     if count == 0 then
@@ -1121,8 +1171,8 @@ task.spawn(function()
     filteredDictionary = FilterWordsByMode()
     isInitialized = true
     
-    statusLabel.Text = count .. " words ready! lets go"
-    wordCountLabel.Text = count .. " words"
+    statusLabel.Text = "🚀 " .. count .. " words loaded! (including 677-WORDLIST.txt)"
+    wordCountLabel.Text = #filteredDictionary .. " words"
     UpdateSuggestions()
 end)
 
