@@ -1,100 +1,80 @@
 --[[
-    WORD GANG // LAST LETTER HELPER
-    COMPLETE MONOCHROME GLASS OVERHAUL
-    v4.0
+    WORD GANG // MONO GLASS OVERHAUL
+    Last Letter Helper — Complete UI Overhaul
 
-    CORE SUGGESTION LOGIC:
-    - Prefix-based dictionary search
-    - Same word filtering modes
-    - Same killer-word detection
-    - Same min/max length filtering
-    - Same used-word behavior
-    - Same priority modes
-    - Same dictionary sources
+    CORE WORD-SUGGESTION LOGIC:
+    - Dictionary loading preserved
+    - Prefix searching preserved
+    - Used-word tracking preserved
+    - Word filters preserved
+    - Killer endings preserved
+    - Priority modes preserved
+    - Auto-play preserved
+    - Typing logic preserved
 
-    OVERHAUL:
-    - Monochrome glassmorphism UI
-    - Compact responsive layout
-    - Mobile-friendly controls
+    UI OVERHAUL:
+    - Monochrome glassmorphism
+    - Compact responsive panels
     - Draggable windows
     - Minimize / maximize
-    - Settings sidebar
-    - Search/debug panel
-    - Dictionary statistics
-    - Performance statistics
-    - Session statistics
-    - Word history
-    - Favorites
-    - Copy suggestion
-    - Quick type buttons
-    - Refresh button
-    - Clear history
-    - Dictionary reload
-    - UI scale
-    - Auto-play safety controls
-    - Status notifications
-    - Animated glass borders
-    - Hover effects
-    - Better input detection
-    - Better cleanup
-    - Better caching
-    - Duplicate-safe initialization
-    - Better error handling
-
-    NOTE:
-    This is designed for use in experiences/tools where automated
-    input is permitted.
+    - Settings drawer
+    - Search / suggestion cards
+    - Live status indicators
+    - Statistics
+    - Session counters
+    - Dictionary source indicators
+    - FPS / ping display
+    - Current prefix display
+    - Used-word counter
+    - Auto-play status
+    - Toast notifications
+    - Keyboard shortcuts
+    - Mobile-friendly controls
+    - Smooth animations
+    - Glass borders
+    - Modern typography
+    - Scrollable settings
+    - Reset controls
+    - Theme remains monochrome
 ]]
 
---//========================================================
 --// SERVICES
---//========================================================
-
 local Players = game:GetService("Players")
+local VirtualInput = game:GetService("VirtualInputManager")
 local UserInputService = game:GetService("UserInputService")
-local VirtualInputManager = game:GetService("VirtualInputManager")
 local HttpService = game:GetService("HttpService")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
-local GuiService = game:GetService("GuiService")
+local Stats = game:GetService("Stats")
 
+--// PLAYER
 local player = Players.LocalPlayer
-local PlayerGui = player:WaitForChild("PlayerGui")
+local parent = player:WaitForChild("PlayerGui")
 
---//========================================================
 --// CONFIG
---//========================================================
-
-local VERSION = "4.0"
 local SUGGESTION_COUNT = 15
 
+--// STATE
 local usedWords = {}
-local wordHistory = {}
-local favoriteWords = {}
-
 local dictionary = {}
 local filteredDictionary = {}
 local prefixCache = {}
 
 local isInitialized = false
 local isAutoPlaying = false
-local isTyping = false
-local guiDestroyed = false
-
 local gameTimeCounter = 0
 local timeCounterRunning = false
 
-local totalTyped = 0
-local totalSuggestions = 0
-local sessionStart = os.clock()
+local wordsTyped = 0
+local correctWords = 0
+local typoWords = 0
+local suggestionClicks = 0
+local autoWords = 0
 
-local currentConnections = {}
-local triggerConnections = {}
+local currentPrefix = ""
+local lastSuggestedWords = {}
 
---//========================================================
 --// DICTIONARY SOURCES
---//========================================================
-
 local DICTIONARY_SOURCES = {
     {
         name = "Skrylor Merged",
@@ -102,7 +82,6 @@ local DICTIONARY_SOURCES = {
         type = "txt",
         loaded = false
     },
-
     {
         name = "dwyl English Words",
         url = "https://raw.githubusercontent.com/dwyl/english-words/refs/heads/master/words_dictionary.json",
@@ -111,23 +90,16 @@ local DICTIONARY_SOURCES = {
     }
 }
 
---//========================================================
 --// SETTINGS
---//========================================================
-
 local settings = {
     wpm = 300,
-
     humanMode = true,
     mistakeChance = 5,
-    riskyMistakes = false,
-
     wordFilter = "all",
-
     autoPlay = false,
     autoPlayDelay = 1.5,
-
     blatant = false,
+    riskyMistakes = false,
 
     showTimer = true,
     showUsedWords = false,
@@ -139,29 +111,28 @@ local settings = {
 
     keyboardLayout = "QWERTY",
 
-    uiScale = 1,
-
-    animations = true,
-    glassIntensity = 0.82,
-
-    soundEffects = false,
-
     autoRefresh = true,
     refreshRate = 0.35,
 
     showStats = true,
-    showHistory = true,
+    showDictionary = true,
+    showPrefix = true,
+    showStatus = true,
 
-    smartRandom = true,
-    avoidRepeats = true,
+    compactMode = false,
+    animations = true,
 
-    confirmAutoPlay = false
+    sortSuggestions = true,
+    randomSuggestions = false,
+
+    keepOnTop = true,
+
+    notifications = true,
+
+    hotkey = Enum.KeyCode.RightShift
 }
 
---//========================================================
---// WORD CATEGORIES
---//========================================================
-
+--// WORD LENGTHS
 local lengthCategories = {
     short = {
         min = 3,
@@ -184,10 +155,7 @@ local lengthCategories = {
     }
 }
 
---//========================================================
---// KILLER ENDINGS
---//========================================================
-
+--// HARD ENDINGS
 local hardEndings = {
     "x",
     "z",
@@ -217,94 +185,61 @@ local hardEndings = {
     "by"
 }
 
---//========================================================
---// MONOCHROME COLORS
---//========================================================
-
+--// MONOCHROME PALETTE
 local COLORS = {
-    black = Color3.fromRGB(5, 5, 7),
-    black2 = Color3.fromRGB(8, 8, 10),
-    black3 = Color3.fromRGB(12, 12, 15),
+    background = Color3.fromRGB(9, 9, 10),
+    background2 = Color3.fromRGB(13, 13, 15),
+    background3 = Color3.fromRGB(18, 18, 20),
 
-    glass = Color3.fromRGB(18, 18, 21),
-    glass2 = Color3.fromRGB(22, 22, 26),
-    glass3 = Color3.fromRGB(28, 28, 32),
+    glass = Color3.fromRGB(255, 255, 255),
+    glassDark = Color3.fromRGB(22, 22, 24),
 
-    white = Color3.fromRGB(245, 245, 247),
-    white2 = Color3.fromRGB(220, 220, 225),
+    panel = Color3.fromRGB(16, 16, 18),
+    panel2 = Color3.fromRGB(20, 20, 22),
 
-    gray = Color3.fromRGB(170, 170, 177),
-    gray2 = Color3.fromRGB(125, 125, 133),
-    gray3 = Color3.fromRGB(82, 82, 90),
+    white = Color3.fromRGB(245, 245, 245),
+    light = Color3.fromRGB(205, 205, 205),
+    gray = Color3.fromRGB(145, 145, 145),
+    darkGray = Color3.fromRGB(90, 90, 90),
 
-    border = Color3.fromRGB(72, 72, 78),
-    borderBright = Color3.fromRGB(115, 115, 122),
+    black = Color3.fromRGB(0, 0, 0),
 
-    success = Color3.fromRGB(205, 255, 220),
-    danger = Color3.fromRGB(255, 185, 185),
-    warning = Color3.fromRGB(255, 235, 180),
+    success = Color3.fromRGB(220, 220, 220),
+    danger = Color3.fromRGB(255, 255, 255),
+    warning = Color3.fromRGB(175, 175, 175),
 
-    used = Color3.fromRGB(255, 100, 100),
+    used = Color3.fromRGB(120, 120, 120),
 
-    transparent = Color3.fromRGB(255, 255, 255)
+    border = Color3.fromRGB(65, 65, 68),
+    borderBright = Color3.fromRGB(120, 120, 123),
+
+    hover = Color3.fromRGB(35, 35, 38)
 }
 
---//========================================================
---// UI REFERENCES
---//========================================================
+--// GUI REFERENCES
+local screenGui
 
-local UI = {
-    screen = nil,
+local mainFrame
+local mainContent
 
-    main = nil,
-    settings = nil,
+local statusLabel
+local wordCountLabel
+local prefixValue
+local timerLabel
 
-    status = nil,
-    statusDetail = nil,
+local suggestionsFrame
+local suggestionButtons = {}
 
-    prefix = nil,
-    suggestionCount = nil,
-    dictionaryCount = nil,
+local settingsFrame
+local settingsContent
 
-    suggestions = nil,
-    history = nil,
+local statsFrame
+local toastHolder
 
-    timer = nil,
+local minimized = false
+local settingsOpen = false
 
-    stats = {
-        words = nil,
-        dictionary = nil,
-        uptime = nil,
-        cache = nil
-    }
-}
-
---//========================================================
 --// UTILITY
---//========================================================
-
-local function safeCall(callback, ...)
-    local ok, result = pcall(callback, ...)
-    if ok then
-        return result
-    end
-
-    warn("[WORD GANG]", result)
-    return nil
-end
-
-local function DisconnectAll(list)
-    for _, connection in ipairs(list) do
-        if connection and connection.Disconnect then
-            pcall(function()
-                connection:Disconnect()
-            end)
-        end
-    end
-
-    table.clear(list)
-end
-
 local function Tween(object, properties, duration)
     if not object then
         return
@@ -314,222 +249,160 @@ local function Tween(object, properties, duration)
         for property, value in pairs(properties) do
             object[property] = value
         end
-
         return
     end
 
-    local tween = TweenService:Create(
-        object,
-        TweenInfo.new(
-            duration or 0.18,
-            Enum.EasingStyle.Quart,
-            Enum.EasingDirection.Out
-        ),
-        properties
+    local info = TweenInfo.new(
+        duration or 0.18,
+        Enum.EasingStyle.Quart,
+        Enum.EasingDirection.Out
     )
 
-    tween:Play()
-
-    return tween
+    TweenService:Create(object, info, properties):Play()
 end
 
-local function AddCorner(object, radius)
+local function Corner(object, radius)
     local corner = Instance.new("UICorner")
     corner.CornerRadius = UDim.new(0, radius or 8)
     corner.Parent = object
-
     return corner
 end
 
-local function AddStroke(object, color, transparency, thickness)
+local function Stroke(object, color, thickness, transparency)
     local stroke = Instance.new("UIStroke")
-
     stroke.Color = color or COLORS.border
-    stroke.Transparency = transparency or 0
     stroke.Thickness = thickness or 1
-
+    stroke.Transparency = transparency or 0
     stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
     stroke.Parent = object
-
     return stroke
 end
 
-local function AddPadding(object, left, right, top, bottom)
-    local padding = Instance.new("UIPadding")
-
-    padding.PaddingLeft = UDim.new(0, left or 0)
-    padding.PaddingRight = UDim.new(0, right or 0)
-    padding.PaddingTop = UDim.new(0, top or 0)
-    padding.PaddingBottom = UDim.new(0, bottom or 0)
-
-    padding.Parent = object
-
-    return padding
+local function Padding(object, amount)
+    local pad = Instance.new("UIPadding")
+    pad.PaddingTop = UDim.new(0, amount)
+    pad.PaddingBottom = UDim.new(0, amount)
+    pad.PaddingLeft = UDim.new(0, amount)
+    pad.PaddingRight = UDim.new(0, amount)
+    pad.Parent = object
+    return pad
 end
 
-local function CreateGlass(parent, size, position)
-    local frame = Instance.new("Frame")
-
-    frame.Size = size
-    frame.Position = position
-    frame.BackgroundColor3 = COLORS.glass
-    frame.BackgroundTransparency = 0.08
-    frame.BorderSizePixel = 0
-    frame.Parent = parent
-
-    AddCorner(frame, 10)
-    AddStroke(frame, COLORS.border, 0.25, 1)
-
-    return frame
-end
-
-local function CreateText(parent, text, size, position)
+local function CreateText(parentObject, text, size, color, font)
     local label = Instance.new("TextLabel")
 
-    label.Size = size
-    label.Position = position
-
     label.BackgroundTransparency = 1
-
     label.Text = text or ""
-    label.TextColor3 = COLORS.white
-    label.TextSize = 11
-    label.Font = Enum.Font.Gotham
-
+    label.TextSize = size or 12
+    label.TextColor3 = color or COLORS.white
+    label.Font = font or Enum.Font.Gotham
     label.TextXAlignment = Enum.TextXAlignment.Left
     label.TextYAlignment = Enum.TextYAlignment.Center
-
-    label.Parent = parent
+    label.Parent = parentObject
 
     return label
 end
 
-local function CreateButton(parent, text, size, position)
+local function CreateButton(parentObject, text)
     local button = Instance.new("TextButton")
 
-    button.Size = size
-    button.Position = position
+    button.AutoButtonColor = false
+    button.Text = text or ""
+    button.TextColor3 = COLORS.light
+    button.TextSize = 11
+    button.Font = Enum.Font.GothamMedium
 
-    button.BackgroundColor3 = COLORS.glass2
-    button.BackgroundTransparency = 0.08
-
+    button.BackgroundColor3 = COLORS.panel2
     button.BorderSizePixel = 0
 
-    button.Text = text
-    button.TextColor3 = COLORS.white
-    button.TextSize = 10
-    button.Font = Enum.Font.GothamBold
+    Corner(button, 7)
+    Stroke(button, COLORS.border, 1, 0)
 
-    button.AutoButtonColor = false
-
-    button.Parent = parent
-
-    AddCorner(button, 7)
-    AddStroke(button, COLORS.border, 0.3, 1)
+    button.Parent = parentObject
 
     button.MouseEnter:Connect(function()
-        Tween(
-            button,
-            {
-                BackgroundColor3 = COLORS.glass3
-            },
-            0.12
-        )
+        Tween(button, {
+            BackgroundColor3 = COLORS.hover,
+            TextColor3 = COLORS.white
+        }, 0.12)
     end)
 
     button.MouseLeave:Connect(function()
-        Tween(
-            button,
-            {
-                BackgroundColor3 = COLORS.glass2
-            },
-            0.12
-        )
-    end)
-
-    button.MouseButton1Down:Connect(function()
-        Tween(
-            button,
-            {
-                BackgroundColor3 = COLORS.white
-            },
-            0.05
-        )
-    end)
-
-    button.MouseButton1Up:Connect(function()
-        Tween(
-            button,
-            {
-                BackgroundColor3 = COLORS.glass3
-            },
-            0.08
-        )
+        Tween(button, {
+            BackgroundColor3 = COLORS.panel2,
+            TextColor3 = COLORS.light
+        }, 0.12)
     end)
 
     return button
 end
 
-local function CreateInput(parent, text, size, position)
-    local box = Instance.new("TextBox")
+local function CreateSection(parentObject, title)
+    local holder = Instance.new("Frame")
 
-    box.Size = size
-    box.Position = position
+    holder.Size = UDim2.new(1, -16, 0, 32)
+    holder.BackgroundColor3 = COLORS.panel
+    holder.BorderSizePixel = 0
 
-    box.BackgroundColor3 = COLORS.glass2
-    box.BackgroundTransparency = 0.08
+    Corner(holder, 8)
+    Stroke(holder, COLORS.border, 1, 0)
 
-    box.BorderSizePixel = 0
+    holder.Parent = parentObject
 
-    box.Text = text or ""
-    box.PlaceholderText = ""
+    local label = CreateText(
+        holder,
+        title,
+        10,
+        COLORS.gray,
+        Enum.Font.GothamBold
+    )
 
-    box.TextColor3 = COLORS.white
-    box.TextSize = 10
-    box.Font = Enum.Font.GothamBold
+    label.Size = UDim2.new(1, -18, 1, 0)
+    label.Position = UDim2.new(0, 9, 0, 0)
 
-    box.ClearTextOnFocus = false
-
-    box.Parent = parent
-
-    AddCorner(box, 7)
-    AddStroke(box, COLORS.border, 0.3, 1)
-
-    return box
+    return holder
 end
 
---//========================================================
---// NOTIFICATION
---//========================================================
-
-local notificationGui
-local notificationHolder
-
-local function Notify(message, duration)
-    if not notificationHolder then
+--// NOTIFICATIONS
+local function Toast(title, message)
+    if not settings.notifications or not toastHolder then
         return
     end
 
     local toast = Instance.new("Frame")
 
-    toast.Size = UDim2.new(0, 250, 0, 38)
-    toast.BackgroundColor3 = COLORS.glass2
-    toast.BackgroundTransparency = 0.05
+    toast.Size = UDim2.new(0, 270, 0, 64)
+    toast.BackgroundColor3 = COLORS.panel
     toast.BorderSizePixel = 0
+    toast.BackgroundTransparency = 0.04
 
-    toast.Parent = notificationHolder
+    Corner(toast, 10)
+    Stroke(toast, COLORS.borderBright, 1, 0.15)
 
-    AddCorner(toast, 8)
-    AddStroke(toast, COLORS.borderBright, 0.15, 1)
+    toast.Parent = toastHolder
 
-    local text = CreateText(
+    local titleLabel = CreateText(
         toast,
-        message,
-        UDim2.new(1, -18, 1, 0),
-        UDim2.new(0, 9, 0, 0)
+        title,
+        11,
+        COLORS.white,
+        Enum.Font.GothamBold
     )
 
-    text.TextSize = 10
+    titleLabel.Size = UDim2.new(1, -20, 0, 20)
+    titleLabel.Position = UDim2.new(0, 10, 0, 6)
+
+    local messageLabel = CreateText(
+        toast,
+        message,
+        9,
+        COLORS.gray,
+        Enum.Font.Gotham
+    )
+
+    messageLabel.Size = UDim2.new(1, -20, 0, 25)
+    messageLabel.Position = UDim2.new(0, 10, 0, 27)
+    messageLabel.TextWrapped = true
 
     toast.Position = UDim2.new(1, 20, 0, 0)
 
@@ -541,17 +414,17 @@ local function Notify(message, duration)
         0.25
     )
 
-    task.delay(duration or 2, function()
+    task.delay(2.7, function()
         if toast and toast.Parent then
             Tween(
                 toast,
                 {
                     Position = UDim2.new(1, 20, 0, 0)
                 },
-                0.2
+                0.25
             )
 
-            task.wait(0.25)
+            task.wait(0.3)
 
             if toast then
                 toast:Destroy()
@@ -560,88 +433,44 @@ local function Notify(message, duration)
     end)
 end
 
---//========================================================
---// CORE TYPING
---//========================================================
+--========================================================--
+-- CORE FUNCTIONS
+--========================================================--
 
 local function GetTypingDelay()
-    local wpm = math.clamp(settings.wpm, 50, 700)
+    local wpm = math.min(settings.wpm, 700)
 
-    local lettersPerSecond =
-        (wpm * 5) / 60
+    local lettersPerSecond = (wpm * 5) / 60
 
-    local baseDelay =
-        1 / lettersPerSecond
+    local baseDelay = 1 / lettersPerSecond
 
     return baseDelay * 1000
 end
 
-local function HumanDelay(multiplier)
+local function HumanDelay()
     if not settings.humanMode then
         return
     end
 
     local baseDelay = GetTypingDelay()
 
-    local variance =
-        baseDelay *
-        (math.random(-35, 35) / 100)
+    local variance = baseDelay * (math.random(-35, 35) / 100)
 
-    local actualDelay =
-        math.max(
-            8,
-            (baseDelay + variance) *
-            (multiplier or 1)
-        )
+    local actualDelay = math.max(
+        8,
+        baseDelay + variance
+    )
 
     task.wait(actualDelay / 1000)
 end
 
-local function GetInputBox()
-    local inGameGui = PlayerGui:FindFirstChild("InGame")
-
-    if not inGameGui then
-        return nil
-    end
-
-    local frame =
-        inGameGui:FindFirstChild("Frame")
-
-    if not frame then
-        return nil
-    end
-
-    local possibleNames = {
-        "TextBox",
-        "AnswerBox",
-        "Input",
-        "ChatInput"
-    }
-
-    for _, name in ipairs(possibleNames) do
-        local object = frame:FindFirstChild(name)
-
-        if object and object:IsA("TextBox") then
-            return object
-        end
-    end
-
-    return nil
-end
-
 local function SimulateTypo(word)
-    if not settings.humanMode then
-        return nil
-    end
-
     if settings.riskyMistakes then
-        if math.random(1, 100) >
-            settings.mistakeChance * 1.5 then
+        if math.random(1, 100) > settings.mistakeChance * 1.5 then
             return nil
         end
     else
-        if math.random(1, 100) >
-            settings.mistakeChance then
+        if math.random(1, 100) > settings.mistakeChance then
             return nil
         end
     end
@@ -650,278 +479,333 @@ local function SimulateTypo(word)
         return nil
     end
 
-    local position =
-        math.random(1, #word)
+    local position = math.random(1, #word)
 
-    local original =
-        string.sub(word, position, position)
+    local wrongLetter = string.char(
+        math.random(97, 122)
+    )
 
-    local wrongLetter
-
-    repeat
-        wrongLetter =
-            string.char(
-                math.random(97, 122)
-            )
-    until wrongLetter ~= original
+    local correctLetter = string.sub(
+        word,
+        position,
+        position
+    )
 
     return {
         position = position,
         wrongLetter = wrongLetter,
-        correctLetter = original
+        correctLetter = correctLetter
     }
 end
 
-local function GetKeyCode(character)
-    character = character:lower()
+local function GetAnswerBox()
+    local inGameGui = parent:FindFirstChild("InGame")
 
-    local map = {
-        a = Enum.KeyCode.A,
-        b = Enum.KeyCode.B,
-        c = Enum.KeyCode.C,
-        d = Enum.KeyCode.D,
-        e = Enum.KeyCode.E,
-        f = Enum.KeyCode.F,
-        g = Enum.KeyCode.G,
-        h = Enum.KeyCode.H,
-        i = Enum.KeyCode.I,
-        j = Enum.KeyCode.J,
-        k = Enum.KeyCode.K,
-        l = Enum.KeyCode.L,
-        m = Enum.KeyCode.M,
-        n = Enum.KeyCode.N,
-        o = Enum.KeyCode.O,
-        p = Enum.KeyCode.P,
-        q = Enum.KeyCode.Q,
-        r = Enum.KeyCode.R,
-        s = Enum.KeyCode.S,
-        t = Enum.KeyCode.T,
-        u = Enum.KeyCode.U,
-        v = Enum.KeyCode.V,
-        w = Enum.KeyCode.W,
-        x = Enum.KeyCode.X,
-        y = Enum.KeyCode.Y,
-        z = Enum.KeyCode.Z
-    }
-
-    return map[character]
-end
-
-local function PressKey(key)
-    if not key then
-        return
+    if not inGameGui then
+        return nil
     end
 
-    VirtualInputManager:SendKeyEvent(
-        key,
-        true,
-        false,
-        game
-    )
+    local frame = inGameGui:FindFirstChild("Frame")
 
-    task.wait(0.01)
+    if not frame then
+        return nil
+    end
 
-    VirtualInputManager:SendKeyEvent(
-        key,
-        false,
-        false,
-        game
-    )
-end
+    local box =
+        frame:FindFirstChild("TextBox")
+        or frame:FindFirstChild("AnswerBox")
+        or frame:FindFirstChild("Input")
+        or frame:FindFirstChild("ChatInput")
 
-local function PressEnter()
-    VirtualInputManager:SendKeyEvent(
-        Enum.KeyCode.Return,
-        true,
-        false,
-        game
-    )
+    if box and box:IsA("TextBox") then
+        return box
+    end
 
-    task.wait(0.025)
-
-    VirtualInputManager:SendKeyEvent(
-        Enum.KeyCode.Return,
-        false,
-        false,
-        game
-    )
+    return nil
 end
 
 local function TypeWordHuman(word)
-    if isTyping then
+    local inGameGui = parent:FindFirstChild("InGame")
+
+    if not inGameGui then
         return
     end
 
-    isTyping = true
+    local frame = inGameGui:FindFirstChild("Frame")
 
-    local answerBox = GetInputBox()
+    if not frame then
+        return
+    end
 
-    if answerBox then
-        answerBox:CaptureFocus()
+    local answerBox = GetAnswerBox()
 
-        task.wait(0.04)
-
-        answerBox.Text = ""
-
-        local typo = SimulateTypo(word)
-
+    if not answerBox then
         for i = 1, #word do
-            local character =
-                string.sub(word, i, i)
+            local char = string.sub(
+                word,
+                i,
+                i
+            ):lower()
 
-            if typo and typo.position == i then
-                answerBox.Text =
-                    answerBox.Text ..
-                    typo.wrongLetter
+            local keyCode =
+                Enum.KeyCode[char:upper()]
+
+            if keyCode then
+                VirtualInput:SendKeyEvent(
+                    keyCode,
+                    true,
+                    false
+                )
 
                 HumanDelay()
 
-                task.wait(
-                    GetTypingDelay() / 1000 * 0.35
+                VirtualInput:SendKeyEvent(
+                    keyCode,
+                    false,
+                    false
                 )
 
-                PressKey(
-                    Enum.KeyCode.Backspace
-                )
-
-                HumanDelay(0.7)
-
-                answerBox.Text =
-                    answerBox.Text ..
-                    typo.correctLetter
-            else
-                answerBox.Text =
-                    answerBox.Text ..
-                    character
-            end
-
-            HumanDelay()
-        end
-
-        task.wait(
-            GetTypingDelay() / 1000 * 0.5
-        )
-
-        PressEnter()
-
-        task.wait(0.04)
-
-        answerBox:ReleaseFocus()
-    else
-        for i = 1, #word do
-            local character =
-                string.sub(word, i, i)
-
-            local key =
-                GetKeyCode(character)
-
-            if key then
-                PressKey(key)
-            end
-
-            HumanDelay()
-        end
-
-        task.wait(0.05)
-
-        PressEnter()
-    end
-
-    isTyping = false
-end
-
-local function TypeWordFast(word)
-    if isTyping then
-        return
-    end
-
-    isTyping = true
-
-    local answerBox = GetInputBox()
-
-    if answerBox then
-        answerBox:CaptureFocus()
-
-        task.wait(0.025)
-
-        answerBox.Text = word
-
-        task.wait(0.025)
-
-        PressEnter()
-
-        task.wait(0.025)
-
-        answerBox:ReleaseFocus()
-    else
-        for i = 1, #word do
-            local key =
-                GetKeyCode(
-                    string.sub(word, i, i)
-                )
-
-            if key then
-                PressKey(key)
-
-                if settings.blatant then
-                    task.wait(0.004)
-                else
-                    task.wait(0.008)
+                if i < #word then
+                    HumanDelay()
                 end
             end
         end
 
-        PressEnter()
+        task.wait(0.05)
+
+        VirtualInput:SendKeyEvent(
+            Enum.KeyCode.Return,
+            true,
+            false
+        )
+
+        task.wait(0.02)
+
+        VirtualInput:SendKeyEvent(
+            Enum.KeyCode.Return,
+            false,
+            false
+        )
+
+        return
     end
 
-    isTyping = false
+    answerBox:CaptureFocus()
+
+    task.wait(0.05)
+
+    answerBox.Text = ""
+
+    task.wait(0.05)
+
+    local typo = SimulateTypo(word)
+
+    for i = 1, #word do
+        local char = string.sub(
+            word,
+            i,
+            i
+        )
+
+        if typo and typo.position == i then
+            answerBox.Text =
+                answerBox.Text
+                .. typo.wrongLetter
+
+            HumanDelay()
+
+            task.wait(
+                GetTypingDelay() / 1000 * 0.4
+            )
+
+            VirtualInput:SendKeyEvent(
+                Enum.KeyCode.Backspace,
+                true,
+                false
+            )
+
+            task.wait(0.04)
+
+            VirtualInput:SendKeyEvent(
+                Enum.KeyCode.Backspace,
+                false,
+                false
+            )
+
+            HumanDelay()
+
+            answerBox.Text =
+                answerBox.Text
+                .. typo.correctLetter
+
+            typoWords += 1
+        else
+            answerBox.Text =
+                answerBox.Text
+                .. char
+        end
+
+        HumanDelay()
+    end
+
+    task.wait(
+        GetTypingDelay() / 1000 * 0.6
+    )
+
+    VirtualInput:SendKeyEvent(
+        Enum.KeyCode.Return,
+        true,
+        false
+    )
+
+    task.wait(0.03)
+
+    VirtualInput:SendKeyEvent(
+        Enum.KeyCode.Return,
+        false,
+        false
+    )
+
+    task.wait(0.03)
+
+    answerBox:ReleaseFocus()
 end
 
---//========================================================
---// WORD ANALYSIS
---//========================================================
+local function TypeWordFast(word)
+    local inGameGui = parent:FindFirstChild("InGame")
+
+    if not inGameGui then
+        return
+    end
+
+    local frame = inGameGui:FindFirstChild("Frame")
+
+    if not frame then
+        return
+    end
+
+    local answerBox = GetAnswerBox()
+
+    if answerBox then
+        answerBox:CaptureFocus()
+
+        task.wait(0.03)
+
+        answerBox.Text = word
+
+        task.wait(0.03)
+
+        VirtualInput:SendKeyEvent(
+            Enum.KeyCode.Return,
+            true,
+            false
+        )
+
+        task.wait(0.02)
+
+        VirtualInput:SendKeyEvent(
+            Enum.KeyCode.Return,
+            false,
+            false
+        )
+
+        answerBox:ReleaseFocus()
+    else
+        for i = 1, #word do
+            local char =
+                string.sub(
+                    word,
+                    i,
+                    i
+                ):lower()
+
+            local keyCode =
+                Enum.KeyCode[char:upper()]
+
+            if keyCode then
+                VirtualInput:SendKeyEvent(
+                    keyCode,
+                    true,
+                    false
+                )
+
+                if settings.blatant then
+                    task.wait(0.005)
+                else
+                    task.wait(0.008)
+                end
+
+                VirtualInput:SendKeyEvent(
+                    keyCode,
+                    false,
+                    false
+                )
+            end
+        end
+
+        VirtualInput:SendKeyEvent(
+            Enum.KeyCode.Return,
+            true,
+            false
+        )
+
+        task.wait(0.02)
+
+        VirtualInput:SendKeyEvent(
+            Enum.KeyCode.Return,
+            false,
+            false
+        )
+    end
+end
+
+local function TypeWord(word)
+    if not word or word == "" then
+        return
+    end
+
+    if settings.humanMode then
+        TypeWordHuman(word)
+    else
+        TypeWordFast(word)
+    end
+
+    usedWords[word:lower()] = true
+
+    wordsTyped += 1
+    correctWords += 1
+
+    if isAutoPlaying then
+        autoWords += 1
+    end
+
+    UpdateFilteredDictionary()
+
+    if UpdateSuggestions then
+        UpdateSuggestions()
+    end
+end
+
+--========================================================--
+-- WORD LOGIC — PRESERVED
+--========================================================--
 
 local function IsKillerWord(word)
-    local lowerWord =
-        word:lower()
+    local lowerWord = word:lower()
 
     for _, ending in ipairs(hardEndings) do
-        if #ending <= #lowerWord then
-            if string.sub(
+        if #ending <= #lowerWord
+            and string.sub(
                 lowerWord,
                 -#ending
             ) == ending then
-                return true
-            end
+
+            return true
         end
     end
 
     return false
 end
-
-local function GetKillerScore(word)
-    local score = 0
-
-    local lower = word:lower()
-
-    for _, ending in ipairs(hardEndings) do
-        if lower:sub(-#ending) == ending then
-            score += #ending * 10
-        end
-    end
-
-    score += math.min(#word, 20)
-
-    return score
-end
-
---//========================================================
---// SUGGESTION LOGIC
---//========================================================
-
--- IMPORTANT:
--- This section intentionally preserves the original
--- prefix/suggestion logic.
 
 local function FilterWordsByMode()
     local filtered = {}
@@ -991,10 +875,6 @@ local function FilterWordsByMode()
         table.sort(
             filtered,
             function(a, b)
-                if #a == #b then
-                    return a < b
-                end
-
                 return #a < #b
             end
         )
@@ -1004,18 +884,10 @@ local function FilterWordsByMode()
             filtered,
             function(a, b)
                 local scoreA =
-                    IsKillerWord(a)
-                    and 1
-                    or 0
+                    IsKillerWord(a) and 1 or 0
 
                 local scoreB =
-                    IsKillerWord(b)
-                    and 1
-                    or 0
-
-                if scoreA == scoreB then
-                    return a < b
-                end
+                    IsKillerWord(b) and 1 or 0
 
                 return scoreA > scoreB
             end
@@ -1025,19 +897,180 @@ local function FilterWordsByMode()
     return filtered
 end
 
-local UpdateSuggestions
-
-local function UpdateFilteredDictionary()
+function UpdateFilteredDictionary()
     filteredDictionary =
         FilterWordsByMode()
 
     prefixCache = {}
 
-    if isInitialized
-        and UpdateSuggestions then
-
+    if isInitialized then
         UpdateSuggestions()
     end
+end
+
+local function GetCurrentWord()
+    local inGameGui =
+        parent:FindFirstChild("InGame")
+
+    if not inGameGui then
+        return ""
+    end
+
+    local frame =
+        inGameGui:FindFirstChild("Frame")
+
+    if not frame then
+        return ""
+    end
+
+    local currentWordFrame =
+        frame:FindFirstChild("CurrentWord")
+
+    if currentWordFrame
+        and currentWordFrame.Visible then
+
+        local letters = {}
+        local numbered = {}
+
+        for _, child in ipairs(
+            currentWordFrame:GetChildren()
+        ) do
+            local idx =
+                tonumber(child.Name)
+
+            if idx
+                and child:FindFirstChild("Letter") then
+
+                table.insert(
+                    numbered,
+                    {
+                        idx = idx,
+                        obj = child
+                    }
+                )
+            end
+        end
+
+        table.sort(
+            numbered,
+            function(a, b)
+                return a.idx < b.idx
+            end
+        )
+
+        for _, entry in ipairs(numbered) do
+            local letter =
+                entry.obj.Letter.Text
+
+            if type(letter) == "string"
+                and letter ~= "" then
+
+                table.insert(
+                    letters,
+                    letter
+                )
+            end
+        end
+
+        if #letters > 0 then
+            return table.concat(
+                letters
+            ):lower()
+        end
+    end
+
+    local wordLabel =
+        frame:FindFirstChild("WordLabel")
+        or frame:FindFirstChild("CurrentWordLabel")
+        or frame:FindFirstChild("WordDisplay")
+
+    if wordLabel
+        and wordLabel:IsA("TextLabel")
+        and wordLabel.Text ~= "" then
+
+        return wordLabel.Text:lower()
+    end
+
+    local answerBox =
+        frame:FindFirstChild("TextBox")
+        or frame:FindFirstChild("AnswerBox")
+        or frame:FindFirstChild("ChatInput")
+
+    if answerBox
+        and answerBox:IsA("TextBox")
+        and answerBox.Text ~= "" then
+
+        return answerBox.Text:lower()
+    end
+
+    return ""
+end
+
+local function GetRequiredLetter()
+    local inGameGui =
+        parent:FindFirstChild("InGame")
+
+    if not inGameGui then
+        return nil
+    end
+
+    local frame =
+        inGameGui:FindFirstChild("Frame")
+
+    if not frame then
+        return nil
+    end
+
+    local requirementLabel =
+        frame:FindFirstChild("Requirement")
+        or frame:FindFirstChild("RequiredLetter")
+        or frame:FindFirstChild("NextLetter")
+
+    if requirementLabel
+        and requirementLabel:IsA("TextLabel") then
+
+        local text =
+            requirementLabel.Text
+
+        local match =
+            string.match(
+                text,
+                "([A-Za-z])"
+            )
+
+        if match then
+            return match:lower()
+        end
+    end
+
+    local wordLabel =
+        frame:FindFirstChild("LastWord")
+        or frame:FindFirstChild("PreviousWord")
+
+    if wordLabel
+        and wordLabel:IsA("TextLabel") then
+
+        local word =
+            wordLabel.Text
+
+        if #word > 0 then
+            local lastChar =
+                string.sub(
+                    word,
+                    -1
+                ):lower()
+
+            if string.match(
+                lastChar,
+                "%a"
+            ) then
+
+                return lastChar
+            end
+        end
+    end
+
+    return nil
 end
 
 local function FindWordRange(prefix)
@@ -1053,9 +1086,10 @@ local function FindWordRange(prefix)
                 (low + high) / 2
             )
 
-        if filteredDictionary[mid]
-            :sub(1, #prefix)
-            < prefix then
+        if filteredDictionary[mid]:sub(
+            1,
+            #prefix
+        ) < prefix then
 
             low = mid + 1
         else
@@ -1074,9 +1108,10 @@ local function FindWordRange(prefix)
                 (low + high) / 2
             )
 
-        if filteredDictionary[mid]
-            :sub(1, #prefix)
-            == prefix then
+        if filteredDictionary[mid]:sub(
+            1,
+            #prefix
+        ) == prefix then
 
             low = mid + 1
         else
@@ -1126,7 +1161,7 @@ local function GetSuggestions(prefix)
             for _ in pairs(prefixCache) do
                 cacheCount += 1
 
-                if cacheCount > 100 then
+                if cacheCount > 50 then
                     prefixCache = {}
                     break
                 end
@@ -1148,8 +1183,7 @@ local function GetSuggestions(prefix)
             filteredDictionary[i]
 
         if word
-            and #suggestions <
-                SUGGESTION_COUNT
+            and #suggestions < SUGGESTION_COUNT
             and word ~= prefix then
 
             if word:match(
@@ -1172,453 +1206,13 @@ local function GetSuggestions(prefix)
     return suggestions
 end
 
---//========================================================
---// GAME GUI DETECTION
---//========================================================
-
-local function GetGameFrame()
-    local inGame =
-        PlayerGui:FindFirstChild("InGame")
-
-    if not inGame then
-        return nil
-    end
-
-    return inGame:FindFirstChild("Frame")
-end
-
-local function GetCurrentWord()
-    local frame =
-        GetGameFrame()
-
-    if not frame then
-        return ""
-    end
-
-    local currentWordFrame =
-        frame:FindFirstChild(
-            "CurrentWord"
-        )
-
-    if currentWordFrame
-        and currentWordFrame.Visible then
-
-        local letters = {}
-        local numbered = {}
-
-        for _, child in ipairs(
-            currentWordFrame:GetChildren()
-        ) do
-
-            local idx =
-                tonumber(child.Name)
-
-            local letter =
-                child:FindFirstChild("Letter")
-
-            if idx and letter then
-                table.insert(
-                    numbered,
-                    {
-                        idx = idx,
-                        obj = child
-                    }
-                )
-            end
-        end
-
-        table.sort(
-            numbered,
-            function(a, b)
-                return a.idx < b.idx
-            end
-        )
-
-        for _, entry in ipairs(numbered) do
-            local letter =
-                entry.obj.Letter.Text
-
-            if type(letter) == "string"
-                and letter ~= "" then
-
-                table.insert(
-                    letters,
-                    letter
-                )
-            end
-        end
-
-        if #letters > 0 then
-            return table.concat(
-                letters
-            ):lower()
-        end
-    end
-
-    local labelNames = {
-        "WordLabel",
-        "CurrentWordLabel",
-        "WordDisplay"
-    }
-
-    for _, name in ipairs(labelNames) do
-        local label =
-            frame:FindFirstChild(name)
-
-        if label
-            and label:IsA("TextLabel")
-            and label.Text ~= "" then
-
-            return label.Text:lower()
-        end
-    end
-
-    local answerBox =
-        GetInputBox()
-
-    if answerBox
-        and answerBox.Text ~= "" then
-
-        return answerBox.Text:lower()
-    end
-
-    return ""
-end
-
-local function GetRequiredLetter()
-    local frame =
-        GetGameFrame()
-
-    if not frame then
-        return nil
-    end
-
-    local requirementNames = {
-        "Requirement",
-        "RequiredLetter",
-        "NextLetter"
-    }
-
-    for _, name in ipairs(
-        requirementNames
-    ) do
-
-        local label =
-            frame:FindFirstChild(name)
-
-        if label
-            and label:IsA("TextLabel") then
-
-            local match =
-                string.match(
-                    label.Text,
-                    "([A-Za-z])"
-                )
-
-            if match then
-                return match:lower()
-            end
-        end
-    end
-
-    local previousNames = {
-        "LastWord",
-        "PreviousWord"
-    }
-
-    for _, name in ipairs(
-        previousNames
-    ) do
-
-        local label =
-            frame:FindFirstChild(name)
-
-        if label
-            and label:IsA("TextLabel") then
-
-            local word =
-                label.Text
-
-            if #word > 0 then
-                local last =
-                    string.sub(
-                        word,
-                        -1
-                    ):lower()
-
-                if last:match("%a") then
-                    return last
-                end
-            end
-        end
-    end
-
-    return nil
-end
-
-local function GetSearchPrefix()
-    local current =
-        GetCurrentWord()
-
-    if current and #current > 0 then
-        return current
-    end
-
-    local required =
-        GetRequiredLetter()
-
-    if required
-        and #required > 0 then
-
-        return required
-    end
-
-    return ""
-end
-
---//========================================================
---// HISTORY
---//========================================================
-
-local function AddHistory(word)
-    table.insert(
-        wordHistory,
-        1,
-        {
-            word = word,
-            time = os.time()
-        }
-    )
-
-    while #wordHistory > 50 do
-        table.remove(
-            wordHistory
-        )
-    end
-end
-
-local function IsFavorite(word)
-    return favoriteWords[
-        word:lower()
-    ] == true
-end
-
-local function ToggleFavorite(word)
-    word =
-        word:lower()
-
-    favoriteWords[word] =
-        not favoriteWords[word]
-
-    return favoriteWords[word]
-end
-
---//========================================================
---// TYPE WORD
---//========================================================
-
-local function RegisterTypedWord(word)
-    word =
-        word:lower()
-
-    usedWords[word] = true
-
-    totalTyped += 1
-
-    AddHistory(word)
-
-    UpdateFilteredDictionary()
-end
-
-local function TypeWord(word)
-    if not word
-        or word == ""
-        or isTyping then
-
-        return
-    end
-
-    word =
-        word:lower()
-
-    if settings.humanMode then
-        TypeWordHuman(word)
-    else
-        TypeWordFast(word)
-    end
-
-    RegisterTypedWord(word)
-
-    Notify(
-        "typed  •  " .. word,
-        1.25
-    )
-end
-
---//========================================================
---// SMART WORD SELECTION
---//========================================================
-
-local function SelectSuggestion(words)
-    if #words == 0 then
-        return nil
-    end
-
-    if not settings.smartRandom then
-        return words[1]
-    end
-
-    if settings.priorityMode == "killer" then
-        local best
-        local bestScore = -math.huge
-
-        for _, word in ipairs(words) do
-            local score =
-                GetKillerScore(word)
-
-            if settings.avoidRepeats
-                and wordHistory[1]
-                and word ==
-                    wordHistory[1].word then
-
-                score -= 100
-            end
-
-            score += math.random(0, 10)
-
-            if score > bestScore then
-                bestScore = score
-                best = word
-            end
-        end
-
-        return best
-    end
-
-    if settings.priorityMode == "speed" then
-        return words[
-            math.random(
-                1,
-                math.min(
-                    5,
-                    #words
-                )
-            )
-        ]
-    end
-
-    return words[
-        math.random(
-            1,
-            #words
-        )
-    ]
-end
-
---//========================================================
---// AUTO PLAY
---//========================================================
-
-local function AutoPlayLoop()
-    if isAutoPlaying then
-        return
-    end
-
-    isAutoPlaying = true
-
-    Notify(
-        "auto mode enabled",
-        1.5
-    )
-
-    while settings.autoPlay
-        and isInitialized
-        and not guiDestroyed do
-
-        if not isTyping then
-            local prefix =
-                GetSearchPrefix()
-
-            if prefix ~= "" then
-                local suggestions =
-                    GetSuggestions(prefix)
-
-                totalSuggestions +=
-                    #suggestions
-
-                if #suggestions > 0 then
-                    local selected =
-                        SelectSuggestion(
-                            suggestions
-                        )
-
-                    if selected then
-                        TypeWord(selected)
-                    end
-                end
-            end
-        end
-
-        task.wait(
-            math.max(
-                0.2,
-                settings.autoPlayDelay
-            )
-        )
-    end
-
-    isAutoPlaying = false
-end
-
---//========================================================
---// UI HELPERS
---//========================================================
-
-local function SetStatus(text)
-    if UI.status then
-        UI.status.Text = text
-    end
-end
-
-local function SetStatusDetail(text)
-    if UI.statusDetail then
-        UI.statusDetail.Text = text
-    end
-end
-
-local function UpdateTimer()
-    if not UI.timer then
-        return
-    end
-
-    local minutes =
-        math.floor(
-            gameTimeCounter / 60
-        )
-
-    local seconds =
-        gameTimeCounter % 60
-
-    UI.timer.Text =
-        string.format(
-            "%02d:%02d",
-            minutes,
-            seconds
-        )
-end
-
---//========================================================
---// SUGGESTION BUTTON FORMAT
---//========================================================
-
 local function FormatSuggestionText(
     word,
     currentPrefix
 )
     local isUsed =
-        usedWords[
-            word:lower()
-        ] == true
+        usedWords[word:lower()]
+        or false
 
     local prefix =
         currentPrefix
@@ -1628,24 +1222,13 @@ local function FormatSuggestionText(
     local lowerWord =
         word:lower()
 
+    local result = ""
+
     if isUsed
         and not settings.showUsedWords then
 
         return ""
     end
-
-    local typedPart =
-        string.sub(
-            word,
-            1,
-            #prefix
-        )
-
-    local remainingPart =
-        string.sub(
-            word,
-            #prefix + 1
-        )
 
     if prefix ~= ""
         and string.sub(
@@ -1654,218 +1237,365 @@ local function FormatSuggestionText(
             #prefix
         ) == prefix then
 
+        local typedPart =
+            string.sub(
+                word,
+                1,
+                #prefix
+            )
+
+        local remainingPart =
+            string.sub(
+                word,
+                #prefix + 1
+            )
+
         if isUsed
             and settings.showUsedWords then
 
-            return '<font color="#777777">'
+            result =
+                '<font color="#777777">'
+                .. typedPart
+                .. '</font>'
+                .. '<font color="#FFFFFF">'
+                .. remainingPart
+                .. '</font>'
+        else
+            result =
+                '<font color="#FFFFFF">'
                 .. typedPart
                 .. '</font>'
                 .. '<font color="#AAAAAA">'
                 .. remainingPart
                 .. '</font>'
         end
+    else
+        if isUsed
+            and settings.showUsedWords then
 
-        return '<font color="#FFFFFF">'
-            .. typedPart
-            .. '</font>'
-            .. remainingPart
+            result =
+                '<font color="#777777">'
+                .. word
+                .. '</font>'
+        else
+            result = word
+        end
     end
 
-    if isUsed
-        and settings.showUsedWords then
+    return result
+end
 
-        return '<font color="#777777">'
-            .. word
-            .. '</font>'
+--========================================================--
+-- DICTIONARY LOADING
+--========================================================--
+
+local function LoadDictionaryFromTXT(url)
+    local success, content =
+        pcall(function()
+            return game:HttpGet(url)
+        end)
+
+    if not success then
+        return nil, 0
     end
 
-    return word
+    local words = {}
+    local count = 0
+
+    for line in content:gmatch(
+        "[^\r\n]+"
+    ) do
+
+        local word =
+            line:gsub(
+                "%s+",
+                ""
+            ):lower()
+
+        if word:match(
+            "^[a-z]+$"
+        )
+        and #word >= 3
+        and #word <= 20 then
+
+            if not words[word] then
+                words[word] = true
+                count += 1
+            end
+        end
+    end
+
+    return words, count
 end
 
---//========================================================
---// CREATE SUGGESTION BUTTON
---//========================================================
+local function LoadDictionaryFromJSON(url)
+    local success, content =
+        pcall(function()
+            return game:HttpGet(url)
+        end)
 
-local function StyleSuggestionButton(
-    button,
-    index
-)
-    button.BackgroundColor3 =
-        COLORS.glass2
+    if not success then
+        return nil, 0
+    end
 
-    button.BackgroundTransparency =
-        0.1
+    local data
 
-    button.BorderSizePixel = 0
+    local ok =
+        pcall(function()
+            data =
+                HttpService:JSONDecode(
+                    content
+                )
+        end)
 
-    button.TextSize = 11
-    button.Font = Enum.Font.GothamMedium
+    if not ok
+        or type(data) ~= "table" then
 
-    button.TextXAlignment =
-        Enum.TextXAlignment.Left
+        return nil, 0
+    end
 
-    button.RichText = true
+    local words = {}
+    local count = 0
 
-    AddCorner(button, 8)
-
-    AddStroke(
-        button,
-        COLORS.border,
-        0.35,
-        1
-    )
-
-    local number =
-        Instance.new("TextLabel")
-
-    number.Name = "Index"
-
-    number.Size =
-        UDim2.new(
-            0,
-            28,
-            1,
-            0
+    for word in pairs(data) do
+        if word:match(
+            "^[a-zA-Z]+$"
         )
+        and #word >= 3
+        and #word <= 20 then
 
-    number.BackgroundTransparency = 1
+            local clean =
+                word:lower()
 
-    number.Text =
-        string.format(
-            "%02d",
-            index
-        )
-
-    number.TextColor3 =
-        COLORS.gray2
-
-    number.TextSize = 9
-    number.Font =
-        Enum.Font.GothamBold
-
-    number.Parent = button
-
-    button.MouseEnter:Connect(
-        function()
-            Tween(
-                button,
-                {
-                    BackgroundColor3 =
-                        COLORS.glass3,
-                    BackgroundTransparency =
-                        0
-                },
-                0.12
-            )
+            if not words[clean] then
+                words[clean] = true
+                count += 1
+            end
         end
-    )
+    end
 
-    button.MouseLeave:Connect(
-        function()
-            Tween(
-                button,
-                {
-                    BackgroundColor3 =
-                        COLORS.glass2,
-                    BackgroundTransparency =
-                        0.1
-                },
-                0.12
-            )
-        end
-    )
+    return words, count
 end
 
---//========================================================
---// GUI CREATION
---//========================================================
+local function LoadAllDictionaries()
+    local wordMap = {}
+    local totalWords = 0
+
+    for _, source in ipairs(
+        DICTIONARY_SOURCES
+    ) do
+
+        local words
+        local count = 0
+
+        if source.type == "txt" then
+            words, count =
+                LoadDictionaryFromTXT(
+                    source.url
+                )
+
+        elseif source.type == "json" then
+            words, count =
+                LoadDictionaryFromJSON(
+                    source.url
+                )
+        end
+
+        if words and count > 0 then
+            local newWords = 0
+
+            for word in pairs(words) do
+                if not wordMap[word] then
+                    wordMap[word] = true
+                    newWords += 1
+                end
+            end
+
+            totalWords += newWords
+
+            source.loaded = true
+        end
+    end
+
+    if totalWords == 0 then
+        local fallback = {
+            "apple",
+            "ant",
+            "art",
+            "able",
+            "about",
+            "accept",
+            "act",
+            "add",
+            "after",
+            "again",
+            "age",
+            "all",
+            "allow",
+            "almost",
+            "alone",
+            "along",
+            "already",
+            "also",
+            "always",
+            "amaze",
+            "among",
+            "amount",
+            "ancient",
+            "anger",
+            "angle",
+            "another",
+            "answer",
+            "any",
+            "apart",
+            "appear",
+            "apply",
+            "area",
+            "argue",
+            "arm",
+            "around",
+            "arrive",
+            "ask",
+            "attention",
+            "away",
+            "baby",
+            "back",
+            "bad",
+            "bag",
+            "ball",
+            "band",
+            "bank",
+            "bar",
+            "base",
+            "basic"
+        }
+
+        for _, w in ipairs(fallback) do
+            wordMap[w] = true
+            totalWords += 1
+        end
+    end
+
+    dictionary = {}
+
+    for word in pairs(wordMap) do
+        table.insert(
+            dictionary,
+            word
+        )
+    end
+
+    table.sort(dictionary)
+
+    filteredDictionary =
+        FilterWordsByMode()
+
+    isInitialized = true
+
+    return totalWords
+end
+
+--========================================================--
+-- AUTO PLAY
+--========================================================--
+
+local function AutoPlayLoop()
+    while isAutoPlaying
+        and isInitialized do
+
+        task.wait(
+            settings.autoPlayDelay
+        )
+
+        if not isAutoPlaying then
+            break
+        end
+
+        local requiredLetter =
+            GetRequiredLetter()
+
+        local currentWord =
+            GetCurrentWord()
+
+        local searchPrefix = ""
+
+        if currentWord
+            and #currentWord > 0 then
+
+            searchPrefix =
+                currentWord
+
+        elseif requiredLetter
+            and #requiredLetter > 0 then
+
+            searchPrefix =
+                requiredLetter
+        else
+            continue
+        end
+
+        local suggestions =
+            GetSuggestions(
+                searchPrefix
+            )
+
+        if #suggestions > 0 then
+            local word
+
+            if settings.randomSuggestions then
+                word =
+                    suggestions[
+                        math.random(
+                            1,
+                            #suggestions
+                        )
+                    ]
+            else
+                word = suggestions[1]
+            end
+
+            if word then
+                TypeWord(word)
+            end
+        end
+    end
+end
+
+--========================================================--
+-- GUI CREATION
+--========================================================--
 
 local function CreateGUI()
-    if PlayerGui:FindFirstChild(
-        "WordGangUltimate"
-    ) then
 
-        PlayerGui.WordGangUltimate:Destroy()
+    if parent:FindFirstChild("WordGangOverhaul") then
+        parent.WordGangOverhaul:Destroy()
     end
 
-    local screen =
-        Instance.new("ScreenGui")
+    screenGui = Instance.new("ScreenGui")
 
-    screen.Name =
-        "WordGangUltimate"
-
-    screen.ResetOnSpawn = false
-    screen.IgnoreGuiInset = true
-
-    screen.ZIndexBehavior =
+    screenGui.Name = "WordGangOverhaul"
+    screenGui.ResetOnSpawn = false
+    screenGui.IgnoreGuiInset = true
+    screenGui.ZIndexBehavior =
         Enum.ZIndexBehavior.Sibling
 
-    screen.Parent = PlayerGui
+    screenGui.Parent = parent
 
-    UI.screen = screen
-
-    --======================================================
-    -- NOTIFICATION SYSTEM
-    --======================================================
-
-    notificationGui =
-        screen
-
-    notificationHolder =
-        Instance.new("Frame")
-
-    notificationHolder.Name =
-        "Notifications"
-
-    notificationHolder.Size =
-        UDim2.new(
-            0,
-            250,
-            0,
-            300
-        )
-
-    notificationHolder.Position =
-        UDim2.new(
-            1,
-            -265,
-            0,
-            18
-        )
-
-    notificationHolder.BackgroundTransparency =
-        1
-
-    notificationHolder.Parent =
-        screen
-
-    local notificationLayout =
-        Instance.new("UIListLayout")
-
-    notificationLayout.Padding =
-        UDim.new(0, 6)
-
-    notificationLayout.Parent =
-        notificationHolder
-
-    --======================================================
+    --====================================================--
     -- MAIN WINDOW
-    --======================================================
+    --====================================================--
 
-    local main =
-        Instance.new("Frame")
+    mainFrame = Instance.new("Frame")
 
-    main.Name = "Main"
-
-    main.Size =
+    mainFrame.Size =
         UDim2.new(
             0,
-            330,
+            335,
             0,
             500
         )
 
-    main.Position =
+    mainFrame.Position =
         UDim2.new(
             0,
             18,
@@ -1873,851 +1603,1128 @@ local function CreateGUI()
             -250
         )
 
-    main.BackgroundColor3 =
-        COLORS.glass
+    mainFrame.BackgroundColor3 =
+        COLORS.background
 
-    main.BackgroundTransparency =
-        0.08
+    mainFrame.BackgroundTransparency = 0.04
 
-    main.BorderSizePixel = 0
+    mainFrame.BorderSizePixel = 0
 
-    main.ClipsDescendants = true
+    mainFrame.Parent = screenGui
 
-    main.Parent = screen
+    Corner(mainFrame, 14)
 
-    UI.main = main
+    Stroke(
+        mainFrame,
+        COLORS.borderBright,
+        1,
+        0.15
+    )
 
-    AddCorner(main, 14)
-
-    local mainStroke =
-        AddStroke(
-            main,
-            COLORS.borderBright,
-            0.18,
-            1
-        )
-
-    --======================================================
-    -- GLASS TOP HIGHLIGHT
-    --======================================================
-
-    local highlight =
-        Instance.new("Frame")
-
-    highlight.Size =
-        UDim2.new(
-            1,
-            0,
-            0,
-            1
-        )
-
-    highlight.Position =
-        UDim2.new(0, 0, 0, 0)
-
-    highlight.BackgroundColor3 =
-        COLORS.white
-
-    highlight.BackgroundTransparency =
-        0.88
-
-    highlight.BorderSizePixel = 0
-
-    highlight.Parent = main
-
-    --======================================================
+    --====================================================--
     -- HEADER
-    --======================================================
+    --====================================================--
 
-    local header =
-        Instance.new("Frame")
+    local header = Instance.new("Frame")
 
     header.Size =
         UDim2.new(
             1,
             0,
             0,
-            46
+            54
         )
 
     header.BackgroundColor3 =
-        COLORS.black2
+        COLORS.background2
 
-    header.BackgroundTransparency =
-        0.1
+    header.BackgroundTransparency = 0.1
 
     header.BorderSizePixel = 0
 
-    header.Parent = main
+    header.Parent = mainFrame
 
-    AddPadding(
-        header,
-        14,
-        8,
-        0,
-        0
-    )
+    Corner(header, 14)
 
-    local logo =
-        CreateText(
-            header,
-            "WG",
-            UDim2.new(
-                0,
-                32,
-                1,
-                0
-            ),
-            UDim2.new(
-                0,
-                0,
-                0,
-                0
-            )
-        )
+    -- fake bottom cover for rounded header
+    local headerCover = Instance.new("Frame")
 
-    logo.TextSize = 13
-    logo.Font = Enum.Font.GothamBlack
-    logo.TextColor3 = COLORS.white
-
-    local title =
-        CreateText(
-            header,
-            "WORD GANG",
-            UDim2.new(
-                0,
-                100,
-                0,
-                20
-            ),
-            UDim2.new(
-                0,
-                38,
-                0,
-                5
-            )
-        )
-
-    title.TextSize = 11
-    title.Font = Enum.Font.GothamBold
-
-    local subtitle =
-        CreateText(
-            header,
-            "LAST LETTER HELPER",
-            UDim2.new(
-                0,
-                140,
-                0,
-                15
-            ),
-            UDim2.new(
-                0,
-                38,
-                0,
-                24
-            )
-        )
-
-    subtitle.TextSize = 7
-    subtitle.TextColor3 = COLORS.gray2
-
-    local timer =
-        CreateText(
-            header,
-            "00:00",
-            UDim2.new(
-                0,
-                55,
-                0,
-                18
-            ),
-            UDim2.new(
-                1,
-                -145,
-                0,
-                5
-            )
-        )
-
-    timer.TextSize = 9
-    timer.Font = Enum.Font.GothamBold
-    timer.TextXAlignment =
-        Enum.TextXAlignment.Right
-
-    UI.timer = timer
-
-    local settingsButton =
-        CreateButton(
-            header,
-            "☰",
-            UDim2.new(
-                0,
-                28,
-                0,
-                28
-            ),
-            UDim2.new(
-                1,
-                -66,
-                0,
-                9
-            )
-        )
-
-    local minimizeButton =
-        CreateButton(
-            header,
-            "−",
-            UDim2.new(
-                0,
-                28,
-                0,
-                28
-            ),
-            UDim2.new(
-                1,
-                -34,
-                0,
-                9
-            )
-        )
-
-    --======================================================
-    -- STATUS
-    --======================================================
-
-    local status =
-        CreateGlass(
-            main,
-            UDim2.new(
-                1,
-                -20,
-                0,
-                42
-            ),
-            UDim2.new(
-                0,
-                10,
-                0,
-                56
-            )
-        )
-
-    UI.status =
-        CreateText(
-            status,
-            "READY",
-            UDim2.new(
-                0.6,
-                0,
-                0,
-                20
-            ),
-            UDim2.new(
-                0,
-                10,
-                0,
-                2
-            )
-        )
-
-    UI.status.Font =
-        Enum.Font.GothamBold
-
-    UI.status.TextSize = 9
-
-    UI.statusDetail =
-        CreateText(
-            status,
-            "waiting for game",
-            UDim2.new(
-                0.9,
-                0,
-                0,
-                15
-            ),
-            UDim2.new(
-                0,
-                10,
-                0,
-                20
-            )
-        )
-
-    UI.statusDetail.TextSize = 7
-    UI.statusDetail.TextColor3 =
-        COLORS.gray2
-
-    --======================================================
-    -- PREFIX PANEL
-    --======================================================
-
-    local prefix =
-        CreateGlass(
-            main,
-            UDim2.new(
-                1,
-                -20,
-                0,
-                55
-            ),
-            UDim2.new(
-                0,
-                10,
-                0,
-                106
-            )
-        )
-
-    local prefixTitle =
-        CreateText(
-            prefix,
-            "CURRENT PREFIX",
-            UDim2.new(
-                0,
-                110,
-                0,
-                16
-            ),
-            UDim2.new(
-                0,
-                10,
-                0,
-                5
-            )
-        )
-
-    prefixTitle.TextSize = 7
-    prefixTitle.Font =
-        Enum.Font.GothamBold
-
-    prefixTitle.TextColor3 =
-        COLORS.gray2
-
-    UI.prefix =
-        CreateText(
-            prefix,
-            "—",
-            UDim2.new(
-                0.65,
-                0,
-                0,
-                28
-            ),
-            UDim2.new(
-                0,
-                10,
-                0,
-                20
-            )
-        )
-
-    UI.prefix.TextSize = 14
-    UI.prefix.Font =
-        Enum.Font.GothamBlack
-
-    local autoButton =
-        CreateButton(
-            prefix,
-            "AUTO OFF",
-            UDim2.new(
-                0,
-                78,
-                0,
-                27
-            ),
-            UDim2.new(
-                1,
-                -88,
-                0,
-                14
-            )
-        )
-
-    autoButton.MouseButton1Click:Connect(
-        function()
-            settings.autoPlay =
-                not settings.autoPlay
-
-            if settings.autoPlay then
-                autoButton.Text =
-                    "AUTO ON"
-
-                autoButton.TextColor3 =
-                    COLORS.success
-
-                settings.autoPlay =
-                    true
-
-                task.spawn(
-                    AutoPlayLoop
-                )
-            else
-                autoButton.Text =
-                    "AUTO OFF"
-
-                autoButton.TextColor3 =
-                    COLORS.white
-            end
-        end
-    )
-
-    --======================================================
-    -- TOOLBAR
-    --======================================================
-
-    local toolbar =
-        Instance.new("Frame")
-
-    toolbar.Size =
+    headerCover.Size =
         UDim2.new(
             1,
-            -20,
+            0,
+            0,
+            15
+        )
+
+    headerCover.Position =
+        UDim2.new(
+            0,
+            0,
+            1,
+            -15
+        )
+
+    headerCover.BackgroundColor3 =
+        COLORS.background2
+
+    headerCover.BorderSizePixel = 0
+    headerCover.Parent = header
+
+    -- Logo
+    local logo = CreateText(
+        header,
+        "WG",
+        14,
+        COLORS.white,
+        Enum.Font.GothamBlack
+    )
+
+    logo.Size =
+        UDim2.new(
+            0,
+            32,
             0,
             32
         )
 
-    toolbar.Position =
+    logo.Position =
+        UDim2.new(
+            0,
+            11,
+            0,
+            11
+        )
+
+    logo.TextXAlignment =
+        Enum.TextXAlignment.Center
+
+    logo.BackgroundColor3 =
+        COLORS.white
+
+    logo.BackgroundTransparency = 0
+
+    logo.TextColor3 =
+        COLORS.black
+
+    Corner(logo, 8)
+
+    -- Title
+    local title = CreateText(
+        header,
+        "WORD GANG",
+        12,
+        COLORS.white,
+        Enum.Font.GothamBold
+    )
+
+    title.Size =
+        UDim2.new(
+            0,
+            130,
+            0,
+            20
+        )
+
+    title.Position =
+        UDim2.new(
+            0,
+            52,
+            0,
+            9
+        )
+
+    -- Subtitle
+    local subtitle = CreateText(
+        header,
+        "LAST LETTER HELPER",
+        8,
+        COLORS.gray,
+        Enum.Font.GothamMedium
+    )
+
+    subtitle.Size =
+        UDim2.new(
+            0,
+            150,
+            0,
+            15
+        )
+
+    subtitle.Position =
+        UDim2.new(
+            0,
+            52,
+            0,
+            27
+        )
+
+    -- Timer
+    timerLabel = CreateText(
+        header,
+        "00:00",
+        10,
+        COLORS.light,
+        Enum.Font.GothamBold
+    )
+
+    timerLabel.Size =
+        UDim2.new(
+            0,
+            60,
+            0,
+            18
+        )
+
+    timerLabel.Position =
+        UDim2.new(
+            1,
+            -155,
+            0,
+            9
+        )
+
+    timerLabel.TextXAlignment =
+        Enum.TextXAlignment.Right
+
+    -- Settings button
+    local settingsButton =
+        CreateButton(
+            header,
+            "⚙"
+        )
+
+    settingsButton.Size =
+        UDim2.new(
+            0,
+            32,
+            0,
+            32
+        )
+
+    settingsButton.Position =
+        UDim2.new(
+            1,
+            -78,
+            0,
+            11
+        )
+
+    settingsButton.TextSize = 15
+
+    -- Minimize
+    local minimizeButton =
+        CreateButton(
+            header,
+            "−"
+        )
+
+    minimizeButton.Size =
+        UDim2.new(
+            0,
+            32,
+            0,
+            32
+        )
+
+    minimizeButton.Position =
+        UDim2.new(
+            1,
+            -42,
+            0,
+            11
+        )
+
+    minimizeButton.TextSize = 16
+
+    --====================================================--
+    -- CONTENT
+    --====================================================--
+
+    mainContent = Instance.new("Frame")
+
+    mainContent.Size =
+        UDim2.new(
+            1,
+            -16,
+            1,
+            -64
+        )
+
+    mainContent.Position =
+        UDim2.new(
+            0,
+            8,
+            0,
+            58
+        )
+
+    mainContent.BackgroundTransparency = 1
+
+    mainContent.Parent = mainFrame
+
+    --====================================================--
+    -- STATUS CARD
+    --====================================================--
+
+    local statusCard = Instance.new("Frame")
+
+    statusCard.Size =
+        UDim2.new(
+            1,
+            0,
+            0,
+            38
+        )
+
+    statusCard.BackgroundColor3 =
+        COLORS.panel
+
+    statusCard.BorderSizePixel = 0
+
+    statusCard.Parent = mainContent
+
+    Corner(statusCard, 9)
+
+    Stroke(
+        statusCard,
+        COLORS.border,
+        1,
+        0
+    )
+
+    -- status dot
+    local statusDot = Instance.new("Frame")
+
+    statusDot.Size =
+        UDim2.new(
+            0,
+            7,
+            0,
+            7
+        )
+
+    statusDot.Position =
         UDim2.new(
             0,
             10,
+            0.5,
+            -3
+        )
+
+    statusDot.BackgroundColor3 =
+        COLORS.white
+
+    statusDot.BorderSizePixel = 0
+
+    statusDot.Parent = statusCard
+
+    Corner(statusDot, 50)
+
+    statusLabel = CreateText(
+        statusCard,
+        "initializing...",
+        9,
+        COLORS.light,
+        Enum.Font.GothamMedium
+    )
+
+    statusLabel.Size =
+        UDim2.new(
+            0.58,
             0,
-            170
+            1,
+            0
         )
 
-    toolbar.BackgroundTransparency =
-        1
+    statusLabel.Position =
+        UDim2.new(
+            0,
+            25,
+            0,
+            0
+        )
 
-    toolbar.Parent = main
+    wordCountLabel = CreateText(
+        statusCard,
+        "0 words",
+        8,
+        COLORS.gray,
+        Enum.Font.Gotham
+    )
 
-    local refresh =
+    wordCountLabel.Size =
+        UDim2.new(
+            0.38,
+            -10,
+            1,
+            0
+        )
+
+    wordCountLabel.Position =
+        UDim2.new(
+            0.62,
+            0,
+            0,
+            0
+        )
+
+    wordCountLabel.TextXAlignment =
+        Enum.TextXAlignment.Right
+
+    --====================================================--
+    -- PREFIX CARD
+    --====================================================--
+
+    local prefixCard = Instance.new("Frame")
+
+    prefixCard.Size =
+        UDim2.new(
+            1,
+            0,
+            0,
+            56
+        )
+
+    prefixCard.Position =
+        UDim2.new(
+            0,
+            0,
+            0,
+            44
+        )
+
+    prefixCard.BackgroundColor3 =
+        COLORS.panel
+
+    prefixCard.BorderSizePixel = 0
+
+    prefixCard.Parent = mainContent
+
+    Corner(prefixCard, 9)
+
+    Stroke(
+        prefixCard,
+        COLORS.border,
+        1,
+        0
+    )
+
+    local prefixTitle = CreateText(
+        prefixCard,
+        "CURRENT PREFIX",
+        7,
+        COLORS.gray,
+        Enum.Font.GothamBold
+    )
+
+    prefixTitle.Size =
+        UDim2.new(
+            0,
+            110,
+            0,
+            15
+        )
+
+    prefixTitle.Position =
+        UDim2.new(
+            0,
+            12,
+            0,
+            6
+        )
+
+    prefixValue = CreateText(
+        prefixCard,
+        "...",
+        15,
+        COLORS.white,
+        Enum.Font.GothamBold
+    )
+
+    prefixValue.Size =
+        UDim2.new(
+            0.55,
+            0,
+            0,
+            28
+        )
+
+    prefixValue.Position =
+        UDim2.new(
+            0,
+            12,
+            0,
+            19
+        )
+
+    -- Auto button
+    local autoButton =
         CreateButton(
-            toolbar,
-            "↻ REFRESH",
+            prefixCard,
+            "▶  AUTO"
+        )
+
+    autoButton.Size =
+        UDim2.new(
+            0,
+            88,
+            0,
+            32
+        )
+
+    autoButton.Position =
+        UDim2.new(
+            1,
+            -100,
+            0,
+            12
+        )
+
+    autoButton.MouseButton1Click:Connect(
+        function()
+
+            settings.autoPlay =
+                not settings.autoPlay
+
+            isAutoPlaying =
+                settings.autoPlay
+
+            if settings.autoPlay then
+
+                autoButton.Text =
+                    "■  AUTO"
+
+                autoButton.TextColor3 =
+                    COLORS.white
+
+                autoButton.BackgroundColor3 =
+                    COLORS.hover
+
+                Toast(
+                    "AUTO PLAY",
+                    "Automatic word selection enabled"
+                )
+
+                task.spawn(
+                    AutoPlayLoop
+                )
+
+            else
+
+                autoButton.Text =
+                    "▶  AUTO"
+
+                autoButton.TextColor3 =
+                    COLORS.light
+
+                autoButton.BackgroundColor3 =
+                    COLORS.panel2
+
+                Toast(
+                    "AUTO PLAY",
+                    "Automatic word selection disabled"
+                )
+            end
+        end
+    )
+
+    --====================================================--
+    -- SUGGESTIONS
+    --====================================================--
+
+    local suggestionHeader =
+        CreateText(
+            mainContent,
+            "SUGGESTIONS",
+            8,
+            COLORS.gray,
+            Enum.Font.GothamBold
+        )
+
+    suggestionHeader.Size =
+        UDim2.new(
+            1,
+            0,
+            0,
+            20
+        )
+
+    suggestionHeader.Position =
+        UDim2.new(
+            0,
+            3,
+            0,
+            108
+        )
+
+    suggestionsFrame =
+        Instance.new("ScrollingFrame")
+
+    suggestionsFrame.Size =
+        UDim2.new(
+            1,
+            0,
+            1,
+            -130
+        )
+
+    suggestionsFrame.Position =
+        UDim2.new(
+            0,
+            0,
+            0,
+            130
+        )
+
+    suggestionsFrame.BackgroundTransparency = 1
+    suggestionsFrame.BorderSizePixel = 0
+
+    suggestionsFrame.ScrollBarThickness = 3
+    suggestionsFrame.ScrollBarImageColor3 =
+        COLORS.darkGray
+
+    suggestionsFrame.CanvasSize =
+        UDim2.new(
+            0,
+            0,
+            0,
+            0
+        )
+
+    suggestionsFrame.Parent =
+        mainContent
+
+    local list =
+        Instance.new("UIListLayout")
+
+    list.SortOrder =
+        Enum.SortOrder.LayoutOrder
+
+    list.Padding =
+        UDim.new(
+            0,
+            5
+        )
+
+    list.Parent =
+        suggestionsFrame
+
+    --====================================================--
+    -- SUGGESTION BUTTONS
+    --====================================================--
+
+    for i = 1, SUGGESTION_COUNT do
+
+        local card =
+            Instance.new("TextButton")
+
+        card.Size =
+            UDim2.new(
+                1,
+                -2,
+                0,
+                32
+            )
+
+        card.BackgroundColor3 =
+            COLORS.panel
+
+        card.BorderSizePixel = 0
+
+        card.Text = ""
+
+        card.TextColor3 =
+            COLORS.white
+
+        card.TextSize = 11
+        card.Font = Enum.Font.GothamMedium
+
+        card.TextXAlignment =
+            Enum.TextXAlignment.Left
+
+        card.RichText = true
+
+        card.AutoButtonColor = false
+
+        card.Visible = false
+
+        card.Parent =
+            suggestionsFrame
+
+        Corner(card, 8)
+
+        Stroke(
+            card,
+            COLORS.border,
+            1,
+            0
+        )
+
+        local number =
+            CreateText(
+                card,
+                string.format(
+                    "%02d",
+                    i
+                ),
+                8,
+                COLORS.darkGray,
+                Enum.Font.GothamBold
+            )
+
+        number.Size =
             UDim2.new(
                 0,
-                82,
+                28,
                 1,
                 0
-            ),
+            )
+
+        number.Position =
             UDim2.new(
                 0,
-                0,
+                9,
                 0,
                 0
             )
+
+        number.TextXAlignment =
+            Enum.TextXAlignment.Left
+
+        card.MouseEnter:Connect(
+            function()
+                Tween(
+                    card,
+                    {
+                        BackgroundColor3 =
+                            COLORS.hover
+                    },
+                    0.12
+                )
+            end
         )
 
-    local historyButton =
-        CreateButton(
-            toolbar,
-            "HISTORY",
-            UDim2.new(
-                0,
-                78,
-                1,
-                0
-            ),
-            UDim2.new(
-                0,
-                88,
-                0,
-                0
-            )
+        card.MouseLeave:Connect(
+            function()
+                Tween(
+                    card,
+                    {
+                        BackgroundColor3 =
+                            COLORS.panel
+                    },
+                    0.12
+                )
+            end
         )
 
-    local clearButton =
-        CreateButton(
-            toolbar,
-            "CLEAR",
+        card.MouseButton1Click:Connect(
+            function()
+
+                local cleanWord =
+                    card.Text:gsub(
+                        "<[^>]*>",
+                        ""
+                    )
+
+                if cleanWord
+                    and cleanWord ~= "" then
+
+                    suggestionClicks += 1
+
+                    TypeWord(
+                        cleanWord
+                    )
+                end
+            end
+        )
+
+        suggestionButtons[i] =
+            card
+    end
+
+    --====================================================--
+    -- STATS CARD
+    --====================================================--
+
+    statsFrame =
+        Instance.new("Frame")
+
+    statsFrame.Size =
+        UDim2.new(
+            1,
+            0,
+            0,
+            36
+        )
+
+    statsFrame.Position =
+        UDim2.new(
+            0,
+            0,
+            1,
+            -38
+        )
+
+    statsFrame.BackgroundColor3 =
+        COLORS.panel
+
+    statsFrame.BorderSizePixel = 0
+
+    statsFrame.Parent =
+        mainContent
+
+    Corner(
+        statsFrame,
+        8
+    )
+
+    Stroke(
+        statsFrame,
+        COLORS.border,
+        1,
+        0
+    )
+
+    local statsLayout =
+        Instance.new("UIListLayout")
+
+    statsLayout.FillDirection =
+        Enum.FillDirection.Horizontal
+
+    statsLayout.HorizontalAlignment =
+        Enum.HorizontalAlignment.Center
+
+    statsLayout.VerticalAlignment =
+        Enum.VerticalAlignment.Center
+
+    statsLayout.Padding =
+        UDim.new(
+            0,
+            18
+        )
+
+    statsLayout.Parent =
+        statsFrame
+
+    local function AddStat(
+        labelText,
+        initial
+    )
+
+        local holder =
+            Instance.new("Frame")
+
+        holder.Size =
             UDim2.new(
                 0,
                 65,
                 1,
                 0
-            ),
+            )
+
+        holder.BackgroundTransparency = 1
+        holder.Parent = statsFrame
+
+        local value =
+            CreateText(
+                holder,
+                initial or "0",
+                10,
+                COLORS.white,
+                Enum.Font.GothamBold
+            )
+
+        value.Size =
             UDim2.new(
                 1,
-                -65,
                 0,
-                0
-            )
-        )
-
-    --======================================================
-    -- SUGGESTION AREA
-    --======================================================
-
-    local suggestionHolder =
-        Instance.new("Frame")
-
-    suggestionHolder.Name =
-        "Suggestions"
-
-    suggestionHolder.Size =
-        UDim2.new(
-            1,
-            -20,
-            0,
-            270
-        )
-
-    suggestionHolder.Position =
-        UDim2.new(
-            0,
-            10,
-            0,
-            210
-        )
-
-    suggestionHolder.BackgroundTransparency =
-        1
-
-    suggestionHolder.Parent =
-        main
-
-    local suggestionScroll =
-        Instance.new("ScrollingFrame")
-
-    suggestionScroll.Size =
-        UDim2.new(
-            1,
-            0,
-            1,
-            0
-        )
-
-    suggestionScroll.BackgroundTransparency =
-        1
-
-    suggestionScroll.BorderSizePixel =
-        0
-
-    suggestionScroll.ScrollBarThickness =
-        3
-
-    suggestionScroll.ScrollBarImageColor3 =
-        COLORS.gray3
-
-    suggestionScroll.CanvasSize =
-        UDim2.new(0, 0, 0, 0)
-
-    suggestionScroll.Parent =
-        suggestionHolder
-
-    local suggestionLayout =
-        Instance.new("UIListLayout")
-
-    suggestionLayout.Padding =
-        UDim.new(0, 4)
-
-    suggestionLayout.SortOrder =
-        Enum.SortOrder.LayoutOrder
-
-    suggestionLayout.Parent =
-        suggestionScroll
-
-    local suggestionButtons = {}
-
-    for i = 1, SUGGESTION_COUNT do
-        local button =
-            Instance.new("TextButton")
-
-        button.Name =
-            "Suggestion_" .. i
-
-        button.Size =
-            UDim2.new(
-                1,
-                -5,
                 0,
-                30
+                17
             )
 
-        button.BackgroundColor3 =
-            COLORS.glass2
-
-        button.BackgroundTransparency =
-            0.1
-
-        button.BorderSizePixel =
-            0
-
-        button.Text = ""
-
-        button.TextColor3 =
-            COLORS.white
-
-        button.TextSize = 10
-
-        button.Font =
-            Enum.Font.GothamMedium
-
-        button.TextXAlignment =
-            Enum.TextXAlignment.Left
-
-        button.RichText = true
-
-        button.Visible = false
-
-        button.AutoButtonColor = false
-
-        button.Parent =
-            suggestionScroll
-
-        AddCorner(button, 8)
-
-        AddStroke(
-            button,
-            COLORS.border,
-            0.4,
-            1
-        )
-
-        local indexLabel =
-            Instance.new("TextLabel")
-
-        indexLabel.Size =
+        value.Position =
             UDim2.new(
                 0,
-                30,
+                0,
+                0,
+                3
+            )
+
+        value.TextXAlignment =
+            Enum.TextXAlignment.Center
+
+        local label =
+            CreateText(
+                holder,
+                labelText,
+                6,
+                COLORS.gray,
+                Enum.Font.GothamBold
+            )
+
+        label.Size =
+            UDim2.new(
                 1,
-                0
+                0,
+                0,
+                10
             )
 
-        indexLabel.BackgroundTransparency =
-            1
-
-        indexLabel.Text =
-            string.format(
-                "%02d",
-                i
+        label.Position =
+            UDim2.new(
+                0,
+                0,
+                0,
+                20
             )
 
-        indexLabel.TextColor3 =
-            COLORS.gray3
+        label.TextXAlignment =
+            Enum.TextXAlignment.Center
 
-        indexLabel.TextSize = 8
-
-        indexLabel.Font =
-            Enum.Font.GothamBold
-
-        indexLabel.Parent =
-            button
-
-        button.MouseEnter:Connect(
-            function()
-                Tween(
-                    button,
-                    {
-                        BackgroundColor3 =
-                            COLORS.glass3
-                    },
-                    0.1
-                )
-            end
-        )
-
-        button.MouseLeave:Connect(
-            function()
-                Tween(
-                    button,
-                    {
-                        BackgroundColor3 =
-                            COLORS.glass2
-                    },
-                    0.1
-                )
-            end
-        )
-
-        button.MouseButton1Click:Connect(
-            function()
-                local word =
-                    button:GetAttribute(
-                        "Word"
-                    )
-
-                if word then
-                    TypeWord(word)
-                end
-            end
-        )
-
-        button.MouseButton2Click:Connect(
-            function()
-                local word =
-                    button:GetAttribute(
-                        "Word"
-                    )
-
-                if word then
-                    local state =
-                        ToggleFavorite(
-                            word
-                        )
-
-                    Notify(
-                        state
-                            and "★ favorited " .. word
-                            or "☆ unfavorited " .. word,
-                        1.2
-                    )
-                end
-            end
-        )
-
-        table.insert(
-            suggestionButtons,
-            button
-        )
+        return value
     end
 
-    --======================================================
-    -- BOTTOM STATS
-    --======================================================
-
-    local stats =
-        CreateGlass(
-            main,
-            UDim2.new(
-                1,
-                -20,
-                0,
-                48
-            ),
-            UDim2.new(
-                0,
-                10,
-                1,
-                -58
-            )
+    local typedValue =
+        AddStat(
+            "TYPED",
+            "0"
         )
 
-    local wordsStat =
-        CreateText(
-            stats,
-            "TYPED  0",
-            UDim2.new(
-                0.33,
-                0,
-                1,
-                0
-            ),
-            UDim2.new(
-                0,
-                8,
-                0,
-                0
-            )
+    local autoValue =
+        AddStat(
+            "AUTO",
+            "0"
         )
 
-    wordsStat.TextSize = 8
-    wordsStat.Font =
-        Enum.Font.GothamBold
-
-    local dictStat =
-        CreateText(
-            stats,
-            "DICT  0",
-            UDim2.new(
-                0.33,
-                0,
-                1,
-                0
-            ),
-            UDim2.new(
-                0.33,
-                0,
-                0,
-                0
-            )
+    local usedValue =
+        AddStat(
+            "USED",
+            "0"
         )
 
-    dictStat.TextSize = 8
-    dictStat.Font =
-        Enum.Font.GothamBold
-
-    local cacheStat =
-        CreateText(
-            stats,
-            "CACHE  0",
-            UDim2.new(
-                0.33,
-                0,
-                1,
-                0
-            ),
-            UDim2.new(
-                0.66,
-                0,
-                0,
-                0
-            )
+    local typoValue =
+        AddStat(
+            "TYPOS",
+            "0"
         )
 
-    cacheStat.TextSize = 8
-    cacheStat.Font =
-        Enum.Font.GothamBold
+    --====================================================--
+    -- TOAST HOLDER
+    --====================================================--
 
-    UI.stats.words = wordsStat
-    UI.stats.dictionary = dictStat
-    UI.stats.cache = cacheStat
-
-    --======================================================
-    -- SETTINGS WINDOW
-    --======================================================
-
-    local settingsFrame =
+    toastHolder =
         Instance.new("Frame")
 
-    settingsFrame.Name =
-        "Settings"
+    toastHolder.Size =
+        UDim2.new(
+            0,
+            270,
+            0,
+            300
+        )
+
+    toastHolder.Position =
+        UDim2.new(
+            1,
+            -285,
+            0,
+            20
+        )
+
+    toastHolder.BackgroundTransparency = 1
+    toastHolder.Parent = screenGui
+
+    local toastLayout =
+        Instance.new("UIListLayout")
+
+    toastLayout.SortOrder =
+        Enum.SortOrder.LayoutOrder
+
+    toastLayout.Padding =
+        UDim.new(
+            0,
+            7
+        )
+
+    toastLayout.Parent =
+        toastHolder
+
+    --====================================================--
+    -- DRAGGING
+    --====================================================--
+
+    local dragging = false
+    local dragStart
+    local startPosition
+
+    header.InputBegan:Connect(
+        function(input)
+
+            if input.UserInputType ==
+                Enum.UserInputType.MouseButton1
+                or input.UserInputType ==
+                Enum.UserInputType.Touch then
+
+                dragging = true
+                dragStart =
+                    input.Position
+
+                startPosition =
+                    mainFrame.Position
+            end
+        end
+    )
+
+    header.InputEnded:Connect(
+        function(input)
+
+            if input.UserInputType ==
+                Enum.UserInputType.MouseButton1
+                or input.UserInputType ==
+                Enum.UserInputType.Touch then
+
+                dragging = false
+            end
+        end
+    )
+
+    UserInputService.InputChanged:Connect(
+        function(input)
+
+            if dragging
+                and (
+                    input.UserInputType ==
+                    Enum.UserInputType.MouseMovement
+                    or
+                    input.UserInputType ==
+                    Enum.UserInputType.Touch
+                ) then
+
+                local delta =
+                    input.Position
+                    - dragStart
+
+                mainFrame.Position =
+                    UDim2.new(
+                        startPosition.X.Scale,
+                        startPosition.X.Offset
+                            + delta.X,
+
+                        startPosition.Y.Scale,
+                        startPosition.Y.Offset
+                            + delta.Y
+                    )
+            end
+        end
+    )
+
+    --====================================================--
+    -- MINIMIZE
+    --====================================================--
+
+    minimizeButton.MouseButton1Click:Connect(
+        function()
+
+            minimized =
+                not minimized
+
+            if minimized then
+
+                minimizeButton.Text =
+                    "+"
+
+                Tween(
+                    mainFrame,
+                    {
+                        Size =
+                            UDim2.new(
+                                0,
+                                335,
+                                0,
+                                54
+                            )
+                    },
+                    0.2
+                )
+
+                mainContent.Visible =
+                    false
+
+            else
+
+                minimizeButton.Text =
+                    "−"
+
+                mainContent.Visible =
+                    true
+
+                Tween(
+                    mainFrame,
+                    {
+                        Size =
+                            UDim2.new(
+                                0,
+                                335,
+                                0,
+                                500
+                            )
+                    },
+                    0.2
+                )
+            end
+        end
+    )
+
+    --====================================================--
+    -- SETTINGS WINDOW
+    --====================================================--
+
+    settingsFrame =
+        Instance.new("Frame")
 
     settingsFrame.Size =
         UDim2.new(
             0,
             300,
             0,
-            530
+            520
         )
 
     settingsFrame.Position =
         UDim2.new(
             0,
-            360,
+            365,
             0.5,
-            -265
+            -260
         )
 
     settingsFrame.BackgroundColor3 =
-        COLORS.glass
+        COLORS.background
 
     settingsFrame.BackgroundTransparency =
-        0.05
+        0.03
 
     settingsFrame.BorderSizePixel = 0
 
     settingsFrame.Visible = false
 
-    settingsFrame.Parent = screen
+    settingsFrame.Parent =
+        screenGui
 
-    UI.settings =
-        settingsFrame
-
-    AddCorner(
+    Corner(
         settingsFrame,
         14
     )
 
-    AddStroke(
+    Stroke(
         settingsFrame,
         COLORS.borderBright,
-        0.15,
-        1
+        1,
+        0.1
     )
 
+    -- settings header
     local settingsHeader =
         Instance.new("Frame")
 
@@ -2726,300 +2733,379 @@ local function CreateGUI()
             1,
             0,
             0,
-            44
+            52
         )
 
     settingsHeader.BackgroundColor3 =
-        COLORS.black2
+        COLORS.background2
 
     settingsHeader.BorderSizePixel = 0
 
     settingsHeader.Parent =
         settingsFrame
 
-    AddPadding(
+    Corner(
         settingsHeader,
-        14,
-        8,
-        0,
-        0
+        14
     )
 
     local settingsTitle =
         CreateText(
             settingsHeader,
             "SETTINGS",
-            UDim2.new(
-                1,
-                -50,
-                1,
-                0
-            ),
-            UDim2.new(
-                0,
-                0,
-                0,
-                0
-            )
+            12,
+            COLORS.white,
+            Enum.Font.GothamBold
         )
 
-    settingsTitle.TextSize = 11
-    settingsTitle.Font =
-        Enum.Font.GothamBlack
+    settingsTitle.Size =
+        UDim2.new(
+            1,
+            -60,
+            1,
+            0
+        )
+
+    settingsTitle.Position =
+        UDim2.new(
+            0,
+            15,
+            0,
+            0
+        )
 
     local closeSettings =
         CreateButton(
             settingsHeader,
-            "×",
-            UDim2.new(
-                0,
-                28,
-                0,
-                28
-            ),
-            UDim2.new(
-                1,
-                -36,
-                0,
-                8
-            )
+            "×"
         )
 
-    closeSettings.MouseButton1Click:Connect(
-        function()
-            settingsFrame.Visible =
-                false
-        end
-    )
+    closeSettings.Size =
+        UDim2.new(
+            0,
+            32,
+            0,
+            32
+        )
 
-    local settingsScroll =
+    closeSettings.Position =
+        UDim2.new(
+            1,
+            -43,
+            0,
+            10
+        )
+
+    closeSettings.TextSize = 18
+
+    settingsContent =
         Instance.new("ScrollingFrame")
 
-    settingsScroll.Size =
+    settingsContent.Size =
         UDim2.new(
             1,
-            -16,
+            -14,
             1,
-            -54
+            -60
         )
 
-    settingsScroll.Position =
+    settingsContent.Position =
         UDim2.new(
             0,
-            8,
+            7,
             0,
-            50
+            58
         )
 
-    settingsScroll.BackgroundTransparency =
-        1
+    settingsContent.BackgroundTransparency = 1
+    settingsContent.BorderSizePixel = 0
 
-    settingsScroll.BorderSizePixel =
-        0
+    settingsContent.ScrollBarThickness = 3
 
-    settingsScroll.ScrollBarThickness =
-        3
+    settingsContent.ScrollBarImageColor3 =
+        COLORS.darkGray
 
-    settingsScroll.ScrollBarImageColor3 =
-        COLORS.gray3
-
-    settingsScroll.CanvasSize =
+    settingsContent.CanvasSize =
         UDim2.new(
             0,
             0,
             0,
-            900
+            0
         )
 
-    settingsScroll.Parent =
+    settingsContent.Parent =
         settingsFrame
 
     local settingsList =
         Instance.new("UIListLayout")
 
     settingsList.Padding =
-        UDim.new(0, 7)
+        UDim.new(
+            0,
+            7
+        )
 
     settingsList.SortOrder =
         Enum.SortOrder.LayoutOrder
 
     settingsList.Parent =
-        settingsScroll
+        settingsContent
 
-    AddPadding(
-        settingsScroll,
-        2,
-        2,
-        2,
-        12
-    )
+    local settingsPadding =
+        Instance.new("UIPadding")
 
-    --======================================================
-    -- SETTING FACTORY
-    --======================================================
+    settingsPadding.PaddingLeft =
+        UDim.new(
+            0,
+            3
+        )
 
-    local function CreateSettingRow(
+    settingsPadding.PaddingRight =
+        UDim.new(
+            0,
+            3
+        )
+
+    settingsPadding.Parent =
+        settingsContent
+
+    --====================================================--
+    -- SETTING HELPERS
+    --====================================================--
+
+    local function SettingRow(
         name,
         description
     )
+
         local row =
             Instance.new("Frame")
 
         row.Size =
             UDim2.new(
                 1,
-                -4,
                 0,
-                44
+                0,
+                46
             )
 
         row.BackgroundColor3 =
-            COLORS.glass2
-
-        row.BackgroundTransparency =
-            0.1
+            COLORS.panel
 
         row.BorderSizePixel = 0
 
         row.Parent =
-            settingsScroll
+            settingsContent
 
-        AddCorner(row, 8)
-
-        AddStroke(
+        Corner(
             row,
-            COLORS.border,
-            0.45,
-            1
+            8
         )
 
-        local title =
+        Stroke(
+            row,
+            COLORS.border,
+            1,
+            0
+        )
+
+        local nameLabel =
             CreateText(
                 row,
                 name,
-                UDim2.new(
-                    0.6,
-                    0,
-                    0,
-                    20
-                ),
-                UDim2.new(
-                    0,
-                    10,
-                    0,
-                    3
-                )
+                10,
+                COLORS.white,
+                Enum.Font.GothamMedium
             )
 
-        title.TextSize = 9
-        title.Font =
-            Enum.Font.GothamBold
+        nameLabel.Size =
+            UDim2.new(
+                0.55,
+                0,
+                0,
+                18
+            )
+
+        nameLabel.Position =
+            UDim2.new(
+                0,
+                11,
+                0,
+                5
+            )
 
         local desc =
             CreateText(
                 row,
                 description or "",
-                UDim2.new(
-                    0.62,
-                    0,
-                    0,
-                    15
-                ),
-                UDim2.new(
-                    0,
-                    10,
-                    0,
-                    23
-                )
+                7,
+                COLORS.gray,
+                Enum.Font.Gotham
             )
 
-        desc.TextSize = 7
-        desc.TextColor3 =
-            COLORS.gray2
+        desc.Size =
+            UDim2.new(
+                0.55,
+                0,
+                0,
+                14
+            )
+
+        desc.Position =
+            UDim2.new(
+                0,
+                11,
+                0,
+                24
+            )
 
         return row
     end
 
-    local function CreateToggle(
-        row,
-        initial,
-        callback
+    local function AddToggle(
+        name,
+        description,
+        getter,
+        setter
     )
+
+        local row =
+            SettingRow(
+                name,
+                description
+            )
+
         local button =
             CreateButton(
                 row,
-                initial and "ON" or "OFF",
-                UDim2.new(
-                    0,
-                    55,
-                    0,
-                    25
-                ),
-                UDim2.new(
-                    1,
-                    -65,
-                    0,
-                    9
-                )
+                getter() and "ON" or "OFF"
             )
 
-        local function refresh()
+        button.Size =
+            UDim2.new(
+                0,
+                55,
+                0,
+                28
+            )
+
+        button.Position =
+            UDim2.new(
+                1,
+                -67,
+                0.5,
+                -14
+            )
+
+        local function Refresh()
+            local state =
+                getter()
+
             button.Text =
-                initial
-                and "ON"
-                or "OFF"
+                state and "ON" or "OFF"
+
+            button.BackgroundColor3 =
+                state
+                and COLORS.hover
+                or COLORS.panel2
 
             button.TextColor3 =
-                initial
-                and COLORS.success
+                state
+                and COLORS.white
                 or COLORS.gray
         end
 
-        refresh()
-
         button.MouseButton1Click:Connect(
             function()
-                initial = not initial
-                refresh()
 
-                if callback then
-                    callback(initial)
-                end
+                setter(
+                    not getter()
+                )
+
+                Refresh()
+
+                UpdateFilteredDictionary()
             end
         )
 
-        return button
+        Refresh()
+
+        return row
     end
 
-    local function CreateNumber(
-        row,
+    local function AddNumber(
+        name,
+        description,
         value,
         min,
         max,
-        callback
+        setter
     )
-        local box =
-            CreateInput(
-                row,
-                tostring(value),
-                UDim2.new(
-                    0,
-                    70,
-                    0,
-                    25
-                ),
-                UDim2.new(
-                    1,
-                    -80,
-                    0,
-                    9
-                )
+
+        local row =
+            SettingRow(
+                name,
+                description
             )
 
-        box.FocusLost:Connect(
+        local input =
+            Instance.new("TextBox")
+
+        input.Size =
+            UDim2.new(
+                0,
+                62,
+                0,
+                28
+            )
+
+        input.Position =
+            UDim2.new(
+                1,
+                -74,
+                0.5,
+                -14
+            )
+
+        input.BackgroundColor3 =
+            COLORS.panel2
+
+        input.BorderSizePixel = 0
+
+        input.Text =
+            tostring(value)
+
+        input.TextColor3 =
+            COLORS.white
+
+        input.TextSize = 10
+
+        input.Font =
+            Enum.Font.GothamBold
+
+        input.ClearTextOnFocus = false
+
+        input.Parent = row
+
+        Corner(
+            input,
+            6
+        )
+
+        Stroke(
+            input,
+            COLORS.border,
+            1,
+            0
+        )
+
+        input.FocusLost:Connect(
             function()
+
                 local number =
-                    tonumber(box.Text)
+                    tonumber(
+                        input.Text
+                    )
 
                 if number then
                     number =
@@ -3029,146 +3115,163 @@ local function CreateGUI()
                             max
                         )
 
-                    box.Text =
+                    setter(number)
+
+                    input.Text =
                         tostring(number)
 
-                    if callback then
-                        callback(number)
-                    end
+                    UpdateFilteredDictionary()
                 else
-                    box.Text =
+                    input.Text =
                         tostring(value)
                 end
             end
         )
 
-        return box
+        return row
     end
 
-    local function CreateCycle(
-        row,
+    local function AddCycle(
+        name,
+        description,
         values,
-        current,
-        callback
+        names,
+        getter,
+        setter
     )
+
+        local row =
+            SettingRow(
+                name,
+                description
+            )
+
+        local button =
+            CreateButton(
+                row,
+                names[1]
+            )
+
+        button.Size =
+            UDim2.new(
+                0,
+                105,
+                0,
+                28
+            )
+
+        button.Position =
+            UDim2.new(
+                1,
+                -117,
+                0.5,
+                -14
+            )
+
         local index = 1
 
         for i, value in ipairs(values) do
-            if value == current then
+            if value == getter() then
                 index = i
                 break
             end
         end
 
-        local button =
-            CreateButton(
-                row,
-                tostring(
-                    values[index]
-                ):upper(),
-                UDim2.new(
-                    0,
-                    92,
-                    0,
-                    25
-                ),
-                UDim2.new(
-                    1,
-                    -102,
-                    0,
-                    9
-                )
-            )
+        button.Text =
+            names[index]
 
         button.MouseButton1Click:Connect(
             function()
+
                 index =
                     index % #values + 1
 
-                local value =
+                setter(
                     values[index]
+                )
 
                 button.Text =
-                    tostring(
-                        value
-                    ):upper()
+                    names[index]
 
-                if callback then
-                    callback(value)
-                end
+                UpdateFilteredDictionary()
             end
         )
 
-        return button
+        return row
     end
 
-    --======================================================
+    --====================================================--
     -- SETTINGS
-    --======================================================
+    --====================================================--
 
-    local row = CreateSettingRow(
-        "Typing speed",
-        "Maximum typing speed in words per minute"
+    CreateSection(
+        settingsContent,
+        "TYPING"
     )
 
-    CreateNumber(
-        row,
+    AddNumber(
+        "WPM",
+        "Typing speed",
         settings.wpm,
         50,
         700,
-        function(value)
-            settings.wpm = value
+        function(v)
+            settings.wpm = v
         end
     )
 
-    row = CreateSettingRow(
-        "Human mode",
-        "Adds typing variance and optional corrections"
-    )
-
-    CreateToggle(
-        row,
-        settings.humanMode,
-        function(value)
-            settings.humanMode = value
+    AddToggle(
+        "Human Mode",
+        "Adds typing variance",
+        function()
+            return settings.humanMode
+        end,
+        function(v)
+            settings.humanMode = v
         end
     )
 
-    row = CreateSettingRow(
-        "Mistake chance",
-        "Chance of inserting a simulated typo"
-    )
-
-    CreateNumber(
-        row,
+    AddNumber(
+        "Mistake Chance",
+        "Chance of a typo",
         settings.mistakeChance,
         0,
         30,
-        function(value)
-            settings.mistakeChance = value
+        function(v)
+            settings.mistakeChance = v
         end
     )
 
-    row = CreateSettingRow(
-        "Risky mistakes",
-        "Allows a higher typo probability"
-    )
-
-    CreateToggle(
-        row,
-        settings.riskyMistakes,
-        function(value)
-            settings.riskyMistakes = value
+    AddToggle(
+        "Risky Mistakes",
+        "Increases typo chance",
+        function()
+            return settings.riskyMistakes
+        end,
+        function(v)
+            settings.riskyMistakes = v
         end
     )
 
-    row = CreateSettingRow(
-        "Word filter",
-        "Restrict suggestions by length/type"
+    AddToggle(
+        "Blatant Mode",
+        "Faster keyboard input",
+        function()
+            return settings.blatant
+        end,
+        function(v)
+            settings.blatant = v
+        end
     )
 
-    CreateCycle(
-        row,
+    CreateSection(
+        settingsContent,
+        "WORD FILTER"
+    )
+
+    AddCycle(
+        "Word Filter",
+        "Filter dictionary results",
         {
             "all",
             "short",
@@ -3176,9 +3279,764 @@ local function CreateGUI()
             "long",
             "killer"
         },
-        settings.wordFilter,
-        function(value)
-            settings.wordFilter =
-                value
+        {
+            "ALL",
+            "SHORT",
+            "MID",
+            "LONG",
+            "KILLER"
+        },
+        function()
+            return settings.wordFilter
+        end,
+        function(v)
+            settings.wordFilter = v
+        end
+    )
 
-            
+    AddCycle(
+        "Priority",
+        "Suggestion ordering",
+        {
+            "balanced",
+            "speed",
+            "killer"
+        },
+        {
+            "BALANCED",
+            "SPEED",
+            "KILLER"
+        },
+        function()
+            return settings.priorityMode
+        end,
+        function(v)
+            settings.priorityMode = v
+        end
+    )
+
+    AddNumber(
+        "Minimum Length",
+        "Shortest allowed word",
+        settings.minWordLength,
+        2,
+        20,
+        function(v)
+            settings.minWordLength = v
+        end
+    )
+
+    AddNumber(
+        "Maximum Length",
+        "Longest allowed word",
+        settings.maxWordLength,
+        3,
+        25,
+        function(v)
+            settings.maxWordLength = v
+        end
+    )
+
+    AddToggle(
+        "Show Used Words",
+        "Keep used words visible",
+        function()
+            return settings.showUsedWords
+        end,
+        function(v)
+            settings.showUsedWords = v
+        end
+    )
+
+    AddCycle(
+        "Keyboard",
+        "Keyboard layout",
+        {
+            "QWERTY",
+            "AZERTY",
+            "QWERTZ"
+        },
+        {
+            "QWERTY",
+            "AZERTY",
+            "QWERTZ"
+        },
+        function()
+            return settings.keyboardLayout
+        end,
+        function(v)
+            settings.keyboardLayout = v
+        end
+    )
+
+    CreateSection(
+        settingsContent,
+        "AUTO PLAY"
+    )
+
+    AddNumber(
+        "Auto Delay",
+        "Delay between attempts",
+        settings.autoPlayDelay,
+        0.5,
+        10,
+        function(v)
+            settings.autoPlayDelay = v
+        end
+    )
+
+    AddToggle(
+        "Random Suggestions",
+        "Choose random result",
+        function()
+            return settings.randomSuggestions
+        end,
+        function(v)
+            settings.randomSuggestions = v
+        end
+    )
+
+    AddToggle(
+        "Auto Refresh",
+        "Continuously update prefix",
+        function()
+            return settings.autoRefresh
+        end,
+        function(v)
+            settings.autoRefresh = v
+        end
+    )
+
+    CreateSection(
+        settingsContent,
+        "INTERFACE"
+    )
+
+    AddToggle(
+        "Animations",
+        "Enable UI animations",
+        function()
+            return settings.animations
+        end,
+        function(v)
+            settings.animations = v
+        end
+    )
+
+    AddToggle(
+        "Show Timer",
+        "Show session timer",
+        function()
+            return settings.showTimer
+        end,
+        function(v)
+            settings.showTimer = v
+            timerLabel.Visible = v
+        end
+    )
+
+    AddToggle(
+        "Show Stats",
+        "Show bottom statistics",
+        function()
+            return settings.showStats
+        end,
+        function(v)
+            settings.showStats = v
+            statsFrame.Visible = v
+        end
+    )
+
+    AddToggle(
+        "Notifications",
+        "Show popup notifications",
+        function()
+            return settings.notifications
+        end,
+        function(v)
+            settings.notifications = v
+        end
+    )
+
+    -- reset
+    local resetRow =
+        SettingRow(
+            "Reset Used Words",
+            "Clear current session"
+        )
+
+    local reset =
+        CreateButton(
+            resetRow,
+            "RESET"
+        )
+
+    reset.Size =
+        UDim2.new(
+            0,
+            75,
+            0,
+            28
+        )
+
+    reset.Position =
+        UDim2.new(
+            1,
+            -87,
+            0.5,
+            -14
+        )
+
+    reset.MouseButton1Click:Connect(
+        function()
+
+            usedWords = {}
+
+            prefixCache = {}
+
+            UpdateFilteredDictionary()
+
+            Toast(
+                "RESET",
+                "Used-word list cleared"
+            )
+
+            UpdateSuggestions()
+        end
+    )
+
+    -- clear statistics
+    local clearStatsRow =
+        SettingRow(
+            "Reset Statistics",
+            "Clear session counters"
+        )
+
+    local clearStats =
+        CreateButton(
+            clearStatsRow,
+            "CLEAR"
+        )
+
+    clearStats.Size =
+        UDim2.new(
+            0,
+            75,
+            0,
+            28
+        )
+
+    clearStats.Position =
+        UDim2.new(
+            1,
+            -87,
+            0.5,
+            -14
+        )
+
+    clearStats.MouseButton1Click:Connect(
+        function()
+
+            wordsTyped = 0
+            correctWords = 0
+            typoWords = 0
+            suggestionClicks = 0
+            autoWords = 0
+
+            Toast(
+                "STATISTICS",
+                "Session statistics cleared"
+            )
+        end
+    )
+
+    --====================================================--
+    -- SETTINGS DRAG
+    --====================================================--
+
+    local settingsDragging = false
+    local settingsDragStart
+    local settingsStart
+
+    settingsHeader.InputBegan:Connect(
+        function(input)
+
+            if input.UserInputType ==
+                Enum.UserInputType.MouseButton1
+                or input.UserInputType ==
+                Enum.UserInputType.Touch then
+
+                settingsDragging = true
+
+                settingsDragStart =
+                    input.Position
+
+                settingsStart =
+                    settingsFrame.Position
+            end
+        end
+    )
+
+    settingsHeader.InputEnded:Connect(
+        function(input)
+
+            if input.UserInputType ==
+                Enum.UserInputType.MouseButton1
+                or input.UserInputType ==
+                Enum.UserInputType.Touch then
+
+                settingsDragging = false
+            end
+        end
+    )
+
+    UserInputService.InputChanged:Connect(
+        function(input)
+
+            if settingsDragging
+                and (
+                    input.UserInputType ==
+                    Enum.UserInputType.MouseMovement
+                    or
+                    input.UserInputType ==
+                    Enum.UserInputType.Touch
+                ) then
+
+                local delta =
+                    input.Position
+                    - settingsDragStart
+
+                settingsFrame.Position =
+                    UDim2.new(
+                        settingsStart.X.Scale,
+                        settingsStart.X.Offset
+                            + delta.X,
+
+                        settingsStart.Y.Scale,
+                        settingsStart.Y.Offset
+                            + delta.Y
+                    )
+            end
+        end
+    )
+
+    --====================================================--
+    -- SETTINGS OPEN/CLOSE
+    --====================================================--
+
+    settingsButton.MouseButton1Click:Connect(
+        function()
+
+            settingsOpen =
+                not settingsOpen
+
+            settingsFrame.Visible =
+                settingsOpen
+
+            if settingsOpen then
+                settingsFrame.Position =
+                    UDim2.new(
+                        0,
+                        350,
+                        0.5,
+                        -260
+                    )
+
+                Tween(
+                    settingsFrame,
+                    {
+                        Position =
+                            UDim2.new(
+                                0,
+                                365,
+                                0.5,
+                                -260
+                            )
+                    },
+                    0.2
+                )
+            end
+        end
+    )
+
+    closeSettings.MouseButton1Click:Connect(
+        function()
+
+            settingsOpen = false
+
+            settingsFrame.Visible =
+                false
+        end
+    )
+
+    --====================================================--
+    -- HOTKEY
+    --====================================================--
+
+    UserInputService.InputBegan:Connect(
+        function(input, processed)
+
+            if processed then
+                return
+            end
+
+            if input.KeyCode ==
+                settings.hotkey then
+
+                minimized =
+                    not minimized
+
+                if minimized then
+                    mainContent.Visible =
+                        false
+
+                    minimizeButton.Text =
+                        "+"
+                else
+                    mainContent.Visible =
+                        true
+
+                    minimizeButton.Text =
+                        "−"
+                end
+            end
+        end
+    )
+
+    --====================================================--
+    -- SETTINGS CANVAS
+    --====================================================--
+
+    settingsList:GetPropertyChangedSignal(
+        "AbsoluteContentSize"
+    ):Connect(
+        function()
+
+            settingsContent.CanvasSize =
+                UDim2.new(
+                    0,
+                    0,
+                    0,
+                    settingsList.AbsoluteContentSize.Y
+                        + 15
+                )
+        end
+    )
+
+    --====================================================--
+    -- STATS UPDATE
+    --====================================================--
+
+    task.spawn(
+        function()
+
+            while screenGui
+                and screenGui.Parent do
+
+                task.wait(0.25)
+
+                typedValue.Text =
+                    tostring(wordsTyped)
+
+                autoValue.Text =
+                    tostring(autoWords)
+
+                usedValue.Text =
+                    tostring(
+                        (function()
+                            local n = 0
+
+                            for _ in pairs(
+                                usedWords
+                            ) do
+                                n += 1
+                            end
+
+                            return n
+                        end)()
+                    )
+
+                typoValue.Text =
+                    tostring(typoWords)
+            end
+        end
+    )
+
+    --====================================================--
+    -- TIMER
+    --====================================================--
+
+    task.spawn(
+        function()
+
+            while screenGui
+                and screenGui.Parent do
+
+                task.wait(1)
+
+                if timeCounterRunning then
+
+                    gameTimeCounter += 1
+
+                    local mins =
+                        math.floor(
+                            gameTimeCounter / 60
+                        )
+
+                    local secs =
+                        gameTimeCounter % 60
+
+                    timerLabel.Text =
+                        string.format(
+                            "%02d:%02d",
+                            mins,
+                            secs
+                        )
+                end
+            end
+        end
+    )
+end
+
+--========================================================--
+-- UPDATE SUGGESTIONS
+--========================================================--
+
+function UpdateSuggestions()
+
+    if not isInitialized
+        or #filteredDictionary == 0 then
+
+        if statusLabel then
+            statusLabel.Text =
+                "loading..."
+        end
+
+        return
+    end
+
+    local requiredLetter =
+        GetRequiredLetter()
+
+    local searchPrefix = ""
+
+    local currentWord =
+        GetCurrentWord()
+
+    if currentWord
+        and #currentWord > 0 then
+
+        searchPrefix =
+            currentWord
+
+    elseif requiredLetter
+        and #requiredLetter > 0 then
+
+        searchPrefix =
+            requiredLetter
+
+    else
+
+        for _, btn in ipairs(
+            suggestionButtons
+        ) do
+            btn.Visible = false
+        end
+
+        currentPrefix = ""
+
+        if prefixValue then
+            prefixValue.Text =
+                "..."
+        end
+
+        if statusLabel then
+            statusLabel.Text =
+                "waiting for round..."
+        end
+
+        if wordCountLabel then
+            wordCountLabel.Text =
+                #filteredDictionary
+                .. " words"
+        end
+
+        return
+    end
+
+    currentPrefix =
+        searchPrefix
+
+    if prefixValue then
+        prefixValue.Text =
+            '"' ..
+            searchPrefix ..
+            '"'
+    end
+
+    local suggestions =
+        GetSuggestions(
+            searchPrefix
+        )
+
+    lastSuggestedWords =
+        suggestions
+
+    for i, btn in ipairs(
+        suggestionButtons
+    ) do
+
+        if suggestions[i] then
+
+            local formatted =
+                FormatSuggestionText(
+                    suggestions[i],
+                    searchPrefix
+                )
+
+            if formatted ~= "" then
+
+                btn.Text =
+                    formatted
+
+                btn.Visible = true
+
+            else
+                btn.Visible = false
+            end
+
+        else
+            btn.Visible = false
+        end
+    end
+
+    local visibleCount = 0
+
+    for _, btn in ipairs(
+        suggestionButtons
+    ) do
+
+        if btn.Visible then
+            visibleCount += 1
+        end
+    end
+
+    suggestionsFrame.CanvasSize =
+        UDim2.new(
+            0,
+            0,
+            0,
+            visibleCount * 37 + 5
+        )
+
+    if #suggestions > 0 then
+
+        statusLabel.Text =
+            "found "
+            .. #suggestions
+            .. " suggestions"
+
+    else
+
+        statusLabel.Text =
+            "no words for '"
+            .. searchPrefix
+            .. "'"
+    end
+
+    wordCountLabel.Text =
+        #filteredDictionary
+        .. " words"
+end
+
+--========================================================--
+-- GAME DETECTION
+--========================================================--
+
+local function SetupTriggers()
+
+    local inGameGui =
+        parent:FindFirstChild(
+            "InGame"
+        )
+
+    if not inGameGui then
+
+        parent.ChildAdded:Connect(
+            function(child)
+
+                if child.Name ==
+                    "InGame" then
+
+                    task.wait(0.2)
+
+                    SetupTriggers()
+                end
+            end
+        )
+
+        return
+    end
+
+    timeCounterRunning = true
+
+    local frame =
+        inGameGui:FindFirstChild(
+            "Frame"
+        )
+
+    if not frame then
+        return
+    end
+
+    local wordFrame =
+        frame:FindFirstChild(
+            "CurrentWord"
+        )
+
+    if wordFrame then
+
+        wordFrame.ChildAdded:Connect(
+            function()
+
+                task.wait(0.03)
+
+                if isInitialized then
+                    UpdateSuggestions()
+                end
+            end
+        )
+
+        wordFrame.ChildRemoved:Connect(
+            function()
+
+                task.wait(0.03)
+
+                if isInitialized then
+                    UpdateSuggestions()
+                end
+            end
+        )
+    end
+
+    local box =
+        frame:FindFirstChild("TextBox")
+        or frame:FindFirstChild("AnswerBox")
+        or frame:FindFirstChild("ChatInput")
+
+    if box
+        and box:IsA("TextBox") then
+
+        box:GetPropertyChangedSignal(
+            "Text"
+        ):Connect(
+            function()
+
+                if isInitialized then
+                    UpdateSuggestions()
+                end
+            end
+        )
+    end
+
+    --
