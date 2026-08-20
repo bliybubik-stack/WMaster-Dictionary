@@ -1,47 +1,49 @@
 --[[
-    LAST LETTER HELPER
-    MONOCHROME GLASS UI OVERHAUL
-    ============================================================
-    GUI ONLY OVERHAUL
+    LAST LETTER HELPER — MONO GLASS COMPACT EDITION
+    GUI OVERHAUL ONLY
 
-    Core dictionary / word-selection / typing behavior preserved.
-    The interface has been completely redesigned around:
+    Core functionality intentionally kept the same:
+    • Dictionary loading
+    • Word filtering
+    • Used-word tracking
+    • Suggestions
+    • Auto play
+    • Human typing
+    • Fast typing
+    • Mistakes
+    • Priority modes
+    • Word length limits
+    • Keyboard layouts
+    • Timer
 
+    GUI:
+    • Much slimmer main window
+    • Compact settings window
     • Monochrome glassmorphism
-    • Compact draggable windows
-    • Responsive layout
-    • Search / filter controls
-    • Cleaner suggestion cards
-    • Used-word indicators
-    • Status indicators
-    • Live statistics
+    • Rounded corners
+    • Soft borders
+    • Cleaner spacing
+    • Mobile-friendly buttons
+    • Draggable windows
+    • Minimize button
+    • Compact suggestion rows
     • Settings categories
-    • Compact mobile-friendly controls
-    • Minimize / maximize
-    • GUI scale control
-    • Notification system
-    • Better scrolling
-    • Hover effects
-    • Keyboard-friendly interaction
-    • Modern Roblox UI styling
 ]]
 
+--// SERVICES
 local Players = game:GetService("Players")
 local VirtualInput = game:GetService("VirtualInputManager")
 local UserInputService = game:GetService("UserInputService")
 local HttpService = game:GetService("HttpService")
-local TweenService = game:GetService("TweenService")
 
 local player = Players.LocalPlayer
 local parent = player:WaitForChild("PlayerGui")
 
+--// CONFIG
 local SUGGESTION_COUNT = 15
 local usedWords = {}
 
--- ============================================================
--- DICTIONARY SOURCES
--- ============================================================
-
+--// DICTIONARY SOURCES
 local DICTIONARY_SOURCES = {
     {
         name = "Skrylor Merged",
@@ -57,10 +59,7 @@ local DICTIONARY_SOURCES = {
     }
 }
 
--- ============================================================
--- SETTINGS
--- ============================================================
-
+--// SETTINGS
 local settings = {
     wpm = 300,
     humanMode = true,
@@ -79,55 +78,56 @@ local settings = {
 }
 
 local lengthCategories = {
-    short = { min = 3, max = 5 },
-    middle = { min = 6, max = 9 },
-    long = { min = 10, max = 20 },
-    killer = { min = 3, max = 20 }
+    short = {min = 3, max = 5},
+    middle = {min = 6, max = 9},
+    long = {min = 10, max = 20},
+    killer = {min = 3, max = 20}
 }
 
 local hardEndings = {
-    "x", "z", "q", "j", "v", "c", "k", "y",
-    "ng", "nk", "mp", "nd", "nt", "sk", "sp", "st",
-    "ck", "zz", "xx", "qu", "gy", "py", "my", "by"
+    "x","z","q","j","v","c","k","y",
+    "ng","nk","mp","nd","nt","sk","sp","st",
+    "ck","zz","xx","qu","gy","py","my","by"
 }
 
+--// DATA
 local dictionary = {}
 local filteredDictionary = {}
 local prefixCache = {}
+
 local isInitialized = false
 local isAutoPlaying = false
 local gameTimeCounter = 0
 local timeCounterRunning = false
 
--- ============================================================
--- MONOCHROME PALETTE
--- ============================================================
-
+--// MONOCHROME PALETTE
 local COLORS = {
-    background = Color3.fromRGB(7, 7, 8),
-    background2 = Color3.fromRGB(11, 11, 12),
-    glass = Color3.fromRGB(18, 18, 20),
-    glass2 = Color3.fromRGB(23, 23, 25),
-    glass3 = Color3.fromRGB(28, 28, 30),
+    background = Color3.fromRGB(10,10,11),
+    background2 = Color3.fromRGB(15,15,17),
+    panel = Color3.fromRGB(19,19,21),
+    panel2 = Color3.fromRGB(23,23,25),
 
-    white = Color3.fromRGB(245, 245, 247),
-    text = Color3.fromRGB(230, 230, 233),
-    textDim = Color3.fromRGB(165, 165, 170),
-    muted = Color3.fromRGB(105, 105, 110),
+    glass = Color3.fromRGB(255,255,255),
 
-    border = Color3.fromRGB(55, 55, 60),
-    borderLight = Color3.fromRGB(80, 80, 85),
+    white = Color3.fromRGB(245,245,245),
+    text = Color3.fromRGB(225,225,225),
+    dim = Color3.fromRGB(165,165,165),
+    muted = Color3.fromRGB(105,105,105),
 
-    success = Color3.fromRGB(220, 220, 220),
-    danger = Color3.fromRGB(125, 125, 130),
-    warning = Color3.fromRGB(190, 190, 195),
+    border = Color3.fromRGB(55,55,58),
+    borderBright = Color3.fromRGB(85,85,88),
 
-    black = Color3.fromRGB(0, 0, 0)
+    success = Color3.fromRGB(190,190,190),
+    danger = Color3.fromRGB(255,255,255),
+
+    used = Color3.fromRGB(125,125,125),
+    button = Color3.fromRGB(29,29,32),
+    buttonHover = Color3.fromRGB(38,38,41)
 }
 
--- ============================================================
--- CORE FUNCTIONS
--- ============================================================
+--//========================================================
+--// CORE FUNCTIONS
+--//========================================================
 
 local function GetTypingDelay()
     local wpm = math.min(settings.wpm, 700)
@@ -142,7 +142,7 @@ local function HumanDelay()
     end
 
     local baseDelay = GetTypingDelay()
-    local variance = baseDelay * (math.random(-35, 35) / 100)
+    local variance = baseDelay * (math.random(-35,35) / 100)
     local actualDelay = math.max(8, baseDelay + variance)
 
     task.wait(actualDelay / 1000)
@@ -150,11 +150,11 @@ end
 
 local function SimulateTypo(word)
     if settings.riskyMistakes then
-        if math.random(1, 100) > settings.mistakeChance * 1.5 then
+        if math.random(1,100) > settings.mistakeChance * 1.5 then
             return nil
         end
     else
-        if math.random(1, 100) > settings.mistakeChance then
+        if math.random(1,100) > settings.mistakeChance then
             return nil
         end
     end
@@ -163,9 +163,9 @@ local function SimulateTypo(word)
         return nil
     end
 
-    local position = math.random(1, #word)
-    local wrongLetter = string.char(math.random(97, 122))
-    local correctLetter = string.sub(word, position, position)
+    local position = math.random(1,#word)
+    local wrongLetter = string.char(math.random(97,122))
+    local correctLetter = string.sub(word,position,position)
 
     return {
         position = position,
@@ -174,19 +174,13 @@ local function SimulateTypo(word)
     }
 end
 
-local function GetGameFrame()
+local function FindAnswerBox()
     local inGameGui = parent:FindFirstChild("InGame")
-
     if not inGameGui then
         return nil
     end
 
-    return inGameGui:FindFirstChild("Frame")
-end
-
-local function GetAnswerBox()
-    local frame = GetGameFrame()
-
+    local frame = inGameGui:FindFirstChild("Frame")
     if not frame then
         return nil
     end
@@ -205,23 +199,17 @@ local function GetAnswerBox()
 end
 
 local function TypeWordHuman(word)
-    local frame = GetGameFrame()
-
-    if not frame then
-        return
-    end
-
-    local answerBox = GetAnswerBox()
+    local answerBox = FindAnswerBox()
 
     if not answerBox then
-        for i = 1, #word do
-            local char = string.sub(word, i, i):lower()
+        for i = 1,#word do
+            local char = string.sub(word,i,i):lower()
             local keyCode = Enum.KeyCode[char:upper()]
 
             if keyCode then
-                VirtualInput:SendKeyEvent(keyCode, true, false)
+                VirtualInput:SendKeyEvent(keyCode,true,false)
                 HumanDelay()
-                VirtualInput:SendKeyEvent(keyCode, false, false)
+                VirtualInput:SendKeyEvent(keyCode,false,false)
 
                 if i < #word then
                     HumanDelay()
@@ -231,9 +219,9 @@ local function TypeWordHuman(word)
 
         task.wait(0.05)
 
-        VirtualInput:SendKeyEvent(Enum.KeyCode.Return, true, false)
+        VirtualInput:SendKeyEvent(Enum.KeyCode.Return,true,false)
         task.wait(0.02)
-        VirtualInput:SendKeyEvent(Enum.KeyCode.Return, false, false)
+        VirtualInput:SendKeyEvent(Enum.KeyCode.Return,false,false)
 
         return
     end
@@ -242,33 +230,21 @@ local function TypeWordHuman(word)
     task.wait(0.05)
 
     answerBox.Text = ""
-
     task.wait(0.05)
 
-    for i = 1, #word do
-        local char = string.sub(word, i, i)
+    for i = 1,#word do
+        local char = string.sub(word,i,i)
         local typo = SimulateTypo(word)
 
         if typo and typo.position == i then
             answerBox.Text = answerBox.Text .. typo.wrongLetter
 
             HumanDelay()
-
             task.wait(GetTypingDelay() / 1000 * 0.4)
 
-            VirtualInput:SendKeyEvent(
-                Enum.KeyCode.Backspace,
-                true,
-                false
-            )
-
+            VirtualInput:SendKeyEvent(Enum.KeyCode.Backspace,true,false)
             task.wait(0.04)
-
-            VirtualInput:SendKeyEvent(
-                Enum.KeyCode.Backspace,
-                false,
-                false
-            )
+            VirtualInput:SendKeyEvent(Enum.KeyCode.Backspace,false,false)
 
             HumanDelay()
 
@@ -282,75 +258,57 @@ local function TypeWordHuman(word)
 
     task.wait(GetTypingDelay() / 1000 * 0.6)
 
-    VirtualInput:SendKeyEvent(Enum.KeyCode.Return, true, false)
+    VirtualInput:SendKeyEvent(Enum.KeyCode.Return,true,false)
+    task.wait(0.03)
+    VirtualInput:SendKeyEvent(Enum.KeyCode.Return,false,false)
 
     task.wait(0.03)
-
-    VirtualInput:SendKeyEvent(Enum.KeyCode.Return, false, false)
-
-    task.wait(0.03)
-
     answerBox:ReleaseFocus()
 end
 
 local function TypeWordFast(word)
-    local frame = GetGameFrame()
-
-    if not frame then
-        return
-    end
-
-    local answerBox = GetAnswerBox()
+    local answerBox = FindAnswerBox()
 
     if answerBox then
         answerBox:CaptureFocus()
-
         task.wait(0.03)
 
         answerBox.Text = word
 
         task.wait(0.03)
 
-        VirtualInput:SendKeyEvent(
-            Enum.KeyCode.Return,
-            true,
-            false
-        )
-
+        VirtualInput:SendKeyEvent(Enum.KeyCode.Return,true,false)
         task.wait(0.02)
-
-        VirtualInput:SendKeyEvent(
-            Enum.KeyCode.Return,
-            false,
-            false
-        )
+        VirtualInput:SendKeyEvent(Enum.KeyCode.Return,false,false)
 
         answerBox:ReleaseFocus()
-    else
-        for i = 1, #word do
-            local char = string.sub(word, i, i):lower()
-            local keyCode = Enum.KeyCode[char:upper()]
-
-            if keyCode then
-                VirtualInput:SendKeyEvent(keyCode, true, false)
-
-                if settings.blatant then
-                    task.wait(0.005)
-                else
-                    task.wait(0.008)
-                end
-
-                VirtualInput:SendKeyEvent(keyCode, false, false)
-            end
-        end
-
-        VirtualInput:SendKeyEvent(Enum.KeyCode.Return, true, false)
-
-        task.wait(0.02)
-
-        VirtualInput:SendKeyEvent(Enum.KeyCode.Return, false, false)
+        return
     end
+
+    for i = 1,#word do
+        local char = string.sub(word,i,i):lower()
+        local keyCode = Enum.KeyCode[char:upper()]
+
+        if keyCode then
+            VirtualInput:SendKeyEvent(keyCode,true,false)
+
+            if settings.blatant then
+                task.wait(0.005)
+            else
+                task.wait(0.008)
+            end
+
+            VirtualInput:SendKeyEvent(keyCode,false,false)
+        end
+    end
+
+    VirtualInput:SendKeyEvent(Enum.KeyCode.Return,true,false)
+    task.wait(0.02)
+    VirtualInput:SendKeyEvent(Enum.KeyCode.Return,false,false)
 end
+
+local UpdateFilteredDictionary
+local UpdateSuggestions
 
 local function TypeWord(word)
     if settings.humanMode then
@@ -361,16 +319,23 @@ local function TypeWord(word)
 
     usedWords[word:lower()] = true
 
-    UpdateFilteredDictionary()
+    if UpdateFilteredDictionary then
+        UpdateFilteredDictionary()
+    end
+
+    if UpdateSuggestions then
+        UpdateSuggestions()
+    end
 end
 
 local function IsKillerWord(word)
     local lowerWord = word:lower()
 
-    for _, ending in ipairs(hardEndings) do
-        if #ending <= #lowerWord
-            and string.sub(lowerWord, -#ending) == ending then
-            return true
+    for _,ending in ipairs(hardEndings) do
+        if #ending <= #lowerWord then
+            if string.sub(lowerWord,-#ending) == ending then
+                return true
+            end
         end
     end
 
@@ -383,52 +348,59 @@ local function FilterWordsByMode()
     local minLen = settings.minWordLength or 3
     local maxLen = settings.maxWordLength or 20
 
-    for _, word in ipairs(dictionary) do
+    for _,word in ipairs(dictionary) do
         local wordLen = #word
 
         if wordLen >= minLen and wordLen <= maxLen then
             if not usedWords[word] or settings.showUsedWords then
 
                 if settings.wordFilter == "all" then
-                    table.insert(filtered, word)
+                    table.insert(filtered,word)
 
                 elseif settings.wordFilter == "short"
                     and wordLen >= 3
                     and wordLen <= 5 then
 
-                    table.insert(filtered, word)
+                    table.insert(filtered,word)
 
                 elseif settings.wordFilter == "middle"
                     and wordLen >= 6
                     and wordLen <= 9 then
 
-                    table.insert(filtered, word)
+                    table.insert(filtered,word)
 
                 elseif settings.wordFilter == "long"
                     and wordLen >= 10
                     and wordLen <= 20 then
 
-                    table.insert(filtered, word)
+                    table.insert(filtered,word)
 
                 elseif settings.wordFilter == "killer"
                     and IsKillerWord(word)
                     and wordLen >= 3 then
 
-                    table.insert(filtered, word)
+                    table.insert(filtered,word)
                 end
             end
         end
     end
 
     if settings.priorityMode == "speed" then
-        table.sort(filtered, function(a, b)
+        table.sort(filtered,function(a,b)
+            if #a == #b then
+                return a < b
+            end
             return #a < #b
         end)
 
     elseif settings.priorityMode == "killer" then
-        table.sort(filtered, function(a, b)
+        table.sort(filtered,function(a,b)
             local scoreA = IsKillerWord(a) and 1 or 0
             local scoreB = IsKillerWord(b) and 1 or 0
+
+            if scoreA == scoreB then
+                return a < b
+            end
 
             return scoreA > scoreB
         end)
@@ -437,20 +409,22 @@ local function FilterWordsByMode()
     return filtered
 end
 
-local function UpdateFilteredDictionary()
+UpdateFilteredDictionary = function()
     filteredDictionary = FilterWordsByMode()
     prefixCache = {}
 
-    if isInitialized then
-        if _G.WordGangUpdateSuggestions then
-            _G.WordGangUpdateSuggestions()
-        end
+    if isInitialized and UpdateSuggestions then
+        UpdateSuggestions()
     end
 end
 
 local function GetCurrentWord()
-    local frame = GetGameFrame()
+    local inGameGui = parent:FindFirstChild("InGame")
+    if not inGameGui then
+        return ""
+    end
 
+    local frame = inGameGui:FindFirstChild("Frame")
     if not frame then
         return ""
     end
@@ -461,26 +435,26 @@ local function GetCurrentWord()
         local letters = {}
         local numbered = {}
 
-        for _, child in ipairs(currentWordFrame:GetChildren()) do
+        for _,child in ipairs(currentWordFrame:GetChildren()) do
             local idx = tonumber(child.Name)
 
             if idx and child:FindFirstChild("Letter") then
-                table.insert(numbered, {
+                table.insert(numbered,{
                     idx = idx,
                     obj = child
                 })
             end
         end
 
-        table.sort(numbered, function(a, b)
+        table.sort(numbered,function(a,b)
             return a.idx < b.idx
         end)
 
-        for _, entry in ipairs(numbered) do
+        for _,entry in ipairs(numbered) do
             local letter = entry.obj.Letter.Text
 
             if type(letter) == "string" and letter ~= "" then
-                table.insert(letters, letter)
+                table.insert(letters,letter)
             end
         end
 
@@ -501,9 +475,15 @@ local function GetCurrentWord()
         return wordLabel.Text:lower()
     end
 
-    local answerBox = GetAnswerBox()
+    local answerBox =
+        frame:FindFirstChild("TextBox")
+        or frame:FindFirstChild("AnswerBox")
+        or frame:FindFirstChild("ChatInput")
 
-    if answerBox and answerBox.Text ~= "" then
+    if answerBox
+        and answerBox:IsA("TextBox")
+        and answerBox.Text ~= "" then
+
         return answerBox.Text:lower()
     end
 
@@ -511,8 +491,12 @@ local function GetCurrentWord()
 end
 
 local function GetRequiredLetter()
-    local frame = GetGameFrame()
+    local inGameGui = parent:FindFirstChild("InGame")
+    if not inGameGui then
+        return nil
+    end
 
+    local frame = inGameGui:FindFirstChild("Frame")
     if not frame then
         return nil
     end
@@ -523,8 +507,7 @@ local function GetRequiredLetter()
         or frame:FindFirstChild("NextLetter")
 
     if requirementLabel and requirementLabel:IsA("TextLabel") then
-        local text = requirementLabel.Text
-        local match = string.match(text, "([A-Za-z])")
+        local match = string.match(requirementLabel.Text,"([A-Za-z])")
 
         if match then
             return match:lower()
@@ -539,9 +522,9 @@ local function GetRequiredLetter()
         local word = wordLabel.Text
 
         if #word > 0 then
-            local lastChar = string.sub(word, -1):lower()
+            local lastChar = string.sub(word,-1):lower()
 
-            if string.match(lastChar, "%a") then
+            if string.match(lastChar,"%a") then
                 return lastChar
             end
         end
@@ -551,16 +534,13 @@ local function GetRequiredLetter()
 end
 
 local function FindWordRange(prefix)
-    local low = 1
-    local high = #filteredDictionary
-
-    local startIdx
-    local endIdx
+    local low,high = 1,#filteredDictionary
+    local startIdx,endIdx
 
     while low <= high do
         local mid = math.floor((low + high) / 2)
 
-        if filteredDictionary[mid]:sub(1, #prefix) < prefix then
+        if filteredDictionary[mid]:sub(1,#prefix) < prefix then
             low = mid + 1
         else
             high = mid - 1
@@ -569,13 +549,12 @@ local function FindWordRange(prefix)
 
     startIdx = low
 
-    low = startIdx
-    high = #filteredDictionary
+    low,high = startIdx,#filteredDictionary
 
     while low <= high do
         local mid = math.floor((low + high) / 2)
 
-        if filteredDictionary[mid]:sub(1, #prefix) == prefix then
+        if filteredDictionary[mid]:sub(1,#prefix) == prefix then
             low = mid + 1
         else
             high = mid - 1
@@ -585,10 +564,10 @@ local function FindWordRange(prefix)
     endIdx = high
 
     if startIdx > endIdx then
-        return nil, nil
+        return nil,nil
     end
 
-    return startIdx, endIdx
+    return startIdx,endIdx
 end
 
 local function GetSuggestions(prefix)
@@ -599,17 +578,14 @@ local function GetSuggestions(prefix)
     end
 
     local suggestions = {}
-
     local range = prefixCache[prefix]
 
-    local sIdx
-    local eIdx
+    local sIdx,eIdx
 
     if range then
-        sIdx = range[1]
-        eIdx = range[2]
+        sIdx,eIdx = range[1],range[2]
     else
-        sIdx, eIdx = FindWordRange(prefix)
+        sIdx,eIdx = FindWordRange(prefix)
 
         if sIdx then
             prefixCache[prefix] = {
@@ -620,7 +596,7 @@ local function GetSuggestions(prefix)
             local cacheCount = 0
 
             for _ in pairs(prefixCache) do
-                cacheCount = cacheCount + 1
+                cacheCount += 1
 
                 if cacheCount > 50 then
                     prefixCache = {}
@@ -634,21 +610,21 @@ local function GetSuggestions(prefix)
         return {}
     end
 
-    for i = sIdx, math.min(
-        sIdx + SUGGESTION_COUNT * 3,
-        eIdx
-    ) do
-
+    for i = sIdx,math.min(sIdx + SUGGESTION_COUNT * 3,eIdx) do
         local word = filteredDictionary[i]
 
         if word
             and #suggestions < SUGGESTION_COUNT
-            and word ~= prefix
-            and word:match("^[a-z]+$")
-            and #word >= 3 then
+            and word ~= prefix then
 
-            if not usedWords[word] or settings.showUsedWords then
-                table.insert(suggestions, word)
+            if word:match("^[a-z]+$")
+                and #word >= 3 then
+
+                if not usedWords[word]
+                    or settings.showUsedWords then
+
+                    table.insert(suggestions,word)
+                end
             end
         end
     end
@@ -656,66 +632,24 @@ local function GetSuggestions(prefix)
     return suggestions
 end
 
-local function FormatSuggestionText(word, currentPrefix)
-    local isUsed = usedWords[word:lower()] or false
-    local prefix = currentPrefix and currentPrefix:lower() or ""
-    local lowerWord = word:lower()
-
-    if isUsed and not settings.showUsedWords then
-        return ""
-    end
-
-    if prefix ~= ""
-        and string.sub(lowerWord, 1, #prefix) == prefix then
-
-        local typedPart = string.sub(word, 1, #prefix)
-        local remainingPart = string.sub(word, #prefix + 1)
-
-        if isUsed and settings.showUsedWords then
-            return
-                '<font color="#FFFFFF">'
-                .. typedPart
-                .. '</font>'
-                .. '<font color="#777777">'
-                .. remainingPart
-                .. '</font>'
-        end
-
-        return
-            '<font color="#FFFFFF">'
-            .. typedPart
-            .. '</font>'
-            .. remainingPart
-    end
-
-    if isUsed and settings.showUsedWords then
-        return
-            '<font color="#777777">'
-            .. word
-            .. '</font>'
-    end
-
-    return word
-end
-
--- ============================================================
--- DICTIONARY LOADING
--- ============================================================
+--//========================================================
+--// DICTIONARY
+--//========================================================
 
 local function LoadDictionaryFromTXT(url)
-    local success, content = pcall(function()
+    local success,content = pcall(function()
         return game:HttpGet(url)
     end)
 
     if not success then
-        return nil, 0
+        return nil,0
     end
 
     local words = {}
     local count = 0
 
     for line in content:gmatch("[^\r\n]+") do
-        local word = line:gsub("%s+", ""):lower()
+        local word = line:gsub("%s+",""):lower()
 
         if word:match("^[a-z]+$")
             and #word >= 3
@@ -723,21 +657,21 @@ local function LoadDictionaryFromTXT(url)
 
             if not words[word] then
                 words[word] = true
-                count = count + 1
+                count += 1
             end
         end
     end
 
-    return words, count
+    return words,count
 end
 
 local function LoadDictionaryFromJSON(url)
-    local success, content = pcall(function()
+    local success,content = pcall(function()
         return game:HttpGet(url)
     end)
 
     if not success then
-        return nil, 0
+        return nil,0
     end
 
     local data
@@ -747,7 +681,7 @@ local function LoadDictionaryFromJSON(url)
     end)
 
     if not ok or type(data) ~= "table" then
-        return nil, 0
+        return nil,0
     end
 
     local words = {}
@@ -762,25 +696,25 @@ local function LoadDictionaryFromJSON(url)
 
             if not words[clean] then
                 words[clean] = true
-                count = count + 1
+                count += 1
             end
         end
     end
 
-    return words, count
+    return words,count
 end
 
 local function LoadAllDictionaries()
     local wordMap = {}
     local totalWords = 0
 
-    for _, source in ipairs(DICTIONARY_SOURCES) do
-        local words, count = nil, 0
+    for _,source in ipairs(DICTIONARY_SOURCES) do
+        local words,count = nil,0
 
         if source.type == "txt" then
-            words, count = LoadDictionaryFromTXT(source.url)
+            words,count = LoadDictionaryFromTXT(source.url)
         elseif source.type == "json" then
-            words, count = LoadDictionaryFromJSON(source.url)
+            words,count = LoadDictionaryFromJSON(source.url)
         end
 
         if words and count > 0 then
@@ -789,11 +723,11 @@ local function LoadAllDictionaries()
             for word in pairs(words) do
                 if not wordMap[word] then
                     wordMap[word] = true
-                    newWords = newWords + 1
+                    newWords += 1
                 end
             end
 
-            totalWords = totalWords + newWords
+            totalWords += newWords
             source.loaded = true
         end
     end
@@ -805,35 +739,35 @@ local function LoadAllDictionaries()
             "along","already","also","always","amaze","among",
             "amount","ancient","anger","angle","another","answer",
             "any","apart","appear","apply","area","argue","arm",
-            "around","arrive","ask","attention","away","baby",
-            "back","bad","bag","ball","band","bank","bar","base",
-            "basic"
+            "around","arrive","ask","attention","away","baby","back",
+            "bad","bag","ball","band","bank","bar","base","basic"
         }
 
-        for _, w in ipairs(fallback) do
-            wordMap[w] = true
-            totalWords = totalWords + 1
+        for _,w in ipairs(fallback) do
+            if not wordMap[w] then
+                wordMap[w] = true
+                totalWords += 1
+            end
         end
     end
 
     dictionary = {}
 
     for word in pairs(wordMap) do
-        table.insert(dictionary, word)
+        table.insert(dictionary,word)
     end
 
     table.sort(dictionary)
 
     filteredDictionary = FilterWordsByMode()
-
     isInitialized = true
 
     return totalWords
 end
 
--- ============================================================
--- AUTO PLAY
--- ============================================================
+--//========================================================
+--// AUTO PLAY
+--//========================================================
 
 local function AutoPlayLoop()
     while isAutoPlaying and isInitialized do
@@ -846,7 +780,6 @@ local function AutoPlayLoop()
 
         if currentWord and #currentWord > 0 then
             searchPrefix = currentWord
-
         elseif requiredLetter and #requiredLetter > 0 then
             searchPrefix = requiredLetter
         else
@@ -856,8 +789,7 @@ local function AutoPlayLoop()
         local suggestions = GetSuggestions(searchPrefix)
 
         if #suggestions > 0 then
-            local word =
-                suggestions[math.random(1, #suggestions)]
+            local word = suggestions[math.random(1,#suggestions)]
 
             if word then
                 TypeWord(word)
@@ -866,639 +798,354 @@ local function AutoPlayLoop()
     end
 end
 
--- ============================================================
--- GUI UTILITIES
--- ============================================================
+--//========================================================
+--// GUI HELPERS
+--//========================================================
 
-local function Tween(object, properties, duration)
-    local tween = TweenService:Create(
-        object,
-        TweenInfo.new(
-            duration or 0.18,
-            Enum.EasingStyle.Quint,
-            Enum.EasingDirection.Out
-        ),
-        properties
-    )
-
-    tween:Play()
-
-    return tween
-end
-
-local function Corner(parentObject, radius)
+local function Corner(object,radius)
     local c = Instance.new("UICorner")
-    c.CornerRadius = UDim.new(0, radius or 10)
-    c.Parent = parentObject
+    c.CornerRadius = UDim.new(0,radius or 8)
+    c.Parent = object
     return c
 end
 
-local function Stroke(parentObject, color, thickness, transparency)
+local function Stroke(object,color,thickness,transparency)
     local s = Instance.new("UIStroke")
-
     s.Color = color or COLORS.border
     s.Thickness = thickness or 1
     s.Transparency = transparency or 0
-
-    s.Parent = parentObject
-
+    s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    s.Parent = object
     return s
 end
 
-local function Padding(parentObject, amount)
+local function Padding(object,left,right,top,bottom)
     local p = Instance.new("UIPadding")
-
-    p.PaddingTop = UDim.new(0, amount)
-    p.PaddingBottom = UDim.new(0, amount)
-    p.PaddingLeft = UDim.new(0, amount)
-    p.PaddingRight = UDim.new(0, amount)
-
-    p.Parent = parentObject
-
+    p.PaddingLeft = UDim.new(0,left or 0)
+    p.PaddingRight = UDim.new(0,right or 0)
+    p.PaddingTop = UDim.new(0,top or 0)
+    p.PaddingBottom = UDim.new(0,bottom or 0)
+    p.Parent = object
     return p
 end
 
-local function AddBlur(gui)
-    local blur = Instance.new("BlurEffect")
-    blur.Size = 0
-    blur.Parent = game:GetService("Lighting")
-
-    task.spawn(function()
-        Tween(
-            blur,
-            {Size = 0},
-            0.1
-        )
-    end)
-
-    return blur
+local function Glass(object)
+    object.BackgroundTransparency = 0.08
+    Corner(object,9)
+    Stroke(object,COLORS.border,1,0)
 end
 
-local function MakeGlass(frame)
-    frame.BackgroundColor3 = COLORS.glass
-    frame.BackgroundTransparency = 0.08
+local function MakeButton(parentObject,text)
+    local button = Instance.new("TextButton")
 
-    Corner(frame, 12)
-
-    Stroke(
-        frame,
-        COLORS.borderLight,
-        1,
-        0.35
-    )
-end
-
-local function MakeButton(button)
-    button.BackgroundColor3 = COLORS.glass2
-    button.BackgroundTransparency = 0.05
+    button.BackgroundColor3 = COLORS.button
+    button.Text = text
     button.TextColor3 = COLORS.text
+    button.TextSize = 10
+    button.Font = Enum.Font.GothamMedium
+    button.AutoButtonColor = false
+    button.BorderSizePixel = 0
+    button.Parent = parentObject
 
-    Corner(button, 8)
-
-    local stroke = Stroke(
-        button,
-        COLORS.border,
-        1,
-        0.25
-    )
+    Corner(button,6)
+    Stroke(button,COLORS.border,1,0)
 
     button.MouseEnter:Connect(function()
-        Tween(
-            button,
-            {
-                BackgroundColor3 = COLORS.glass3
-            },
-            0.12
-        )
-
-        Tween(
-            stroke,
-            {
-                Color = COLORS.borderLight,
-                Transparency = 0
-            },
-            0.12
-        )
+        button.BackgroundColor3 = COLORS.buttonHover
     end)
 
     button.MouseLeave:Connect(function()
-        Tween(
-            button,
-            {
-                BackgroundColor3 = COLORS.glass2
-            },
-            0.12
-        )
-
-        Tween(
-            stroke,
-            {
-                Color = COLORS.border,
-                Transparency = 0.25
-            },
-            0.12
-        )
+        button.BackgroundColor3 = COLORS.button
     end)
 
     return button
 end
 
-local function MakeTitle(parentObject, text, size)
-    local label = Instance.new("TextLabel")
-
-    label.BackgroundTransparency = 1
-    label.Text = text
-    label.TextColor3 = COLORS.white
-    label.Font = Enum.Font.GothamBold
-    label.TextSize = size or 13
-    label.TextXAlignment = Enum.TextXAlignment.Left
-    label.Parent = parentObject
-
-    return label
-end
-
-local function MakeSubtext(parentObject, text, size)
-    local label = Instance.new("TextLabel")
-
-    label.BackgroundTransparency = 1
-    label.Text = text
-    label.TextColor3 = COLORS.muted
-    label.Font = Enum.Font.Gotham
-    label.TextSize = size or 9
-    label.TextXAlignment = Enum.TextXAlignment.Left
-    label.Parent = parentObject
-
-    return label
-end
-
-local function MakeToggle(parentObject, initial, callback)
-    local button = Instance.new("TextButton")
-
-    button.Size = UDim2.new(0, 58, 0, 24)
-    button.BackgroundColor3 =
-        initial and COLORS.white or COLORS.glass3
-
-    button.Text =
-        initial and "ON" or "OFF"
-
-    button.TextColor3 =
-        initial and COLORS.black or COLORS.textDim
-
-    button.Font = Enum.Font.GothamBold
-    button.TextSize = 9
-    button.AutoButtonColor = false
-
-    MakeButton(button)
-
-    local state = initial
-
-    local function render()
-        button.Text = state and "ON" or "OFF"
-
-        Tween(
-            button,
-            {
-                BackgroundColor3 =
-                    state
-                    and COLORS.white
-                    or COLORS.glass3,
-
-                TextColor3 =
-                    state
-                    and COLORS.black
-                    or COLORS.textDim
-            },
-            0.12
-        )
-    end
-
-    button.MouseButton1Click:Connect(function()
-        state = not state
-        render()
-
-        if callback then
-            callback(state)
-        end
-    end)
-
-    return button
-end
-
-local function MakeInput(parentObject, text)
+local function MakeInput(parentObject,text)
     local input = Instance.new("TextBox")
 
-    input.BackgroundColor3 = COLORS.background2
-    input.BackgroundTransparency = 0.1
-
-    input.Text = tostring(text)
-    input.TextColor3 = COLORS.white
-
+    input.BackgroundColor3 = COLORS.button
+    input.Text = text
+    input.TextColor3 = COLORS.text
     input.PlaceholderColor3 = COLORS.muted
-
-    input.Font = Enum.Font.GothamBold
     input.TextSize = 10
-
+    input.Font = Enum.Font.GothamMedium
     input.ClearTextOnFocus = false
-    input.TextXAlignment = Enum.TextXAlignment.Center
+    input.BorderSizePixel = 0
+    input.Parent = parentObject
 
-    Corner(input, 7)
-
-    Stroke(
-        input,
-        COLORS.border,
-        1,
-        0.15
-    )
-
-    input.Focused:Connect(function()
-        Tween(
-            input,
-            {
-                BackgroundColor3 = COLORS.glass3
-            },
-            0.12
-        )
-    end)
-
-    input.FocusLost:Connect(function()
-        Tween(
-            input,
-            {
-                BackgroundColor3 = COLORS.background2
-            },
-            0.12
-        )
-    end)
+    Corner(input,6)
+    Stroke(input,COLORS.border,1,0)
 
     return input
 end
 
-local function AddSettingRow(parentObject, y, title, description)
-    local row = Instance.new("Frame")
+local function AddText(parentObject,text,size,color)
+    local label = Instance.new("TextLabel")
 
-    row.Size = UDim2.new(1, -18, 0, 42)
-    row.Position = UDim2.new(0, 9, 0, y)
+    label.BackgroundTransparency = 1
+    label.Text = text
+    label.TextColor3 = color or COLORS.text
+    label.TextSize = size or 10
+    label.Font = Enum.Font.GothamMedium
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.TextYAlignment = Enum.TextYAlignment.Center
+    label.Parent = parentObject
 
-    row.BackgroundColor3 = COLORS.glass2
-    row.BackgroundTransparency = 0.15
-
-    row.BorderSizePixel = 0
-
-    row.Parent = parentObject
-
-    Corner(row, 8)
-
-    Stroke(
-        row,
-        COLORS.border,
-        1,
-        0.55
-    )
-
-    local titleLabel = MakeTitle(
-        row,
-        title,
-        10
-    )
-
-    titleLabel.Size =
-        UDim2.new(1, -85, 0, 18)
-
-    titleLabel.Position =
-        UDim2.new(0, 10, 0, 5)
-
-    local descLabel = MakeSubtext(
-        row,
-        description or "",
-        8
-    )
-
-    descLabel.Size =
-        UDim2.new(1, -85, 0, 14)
-
-    descLabel.Position =
-        UDim2.new(0, 10, 0, 22)
-
-    return row
+    return label
 end
 
--- ============================================================
--- GUI
--- ============================================================
+--//========================================================
+--// CREATE GUI
+--//========================================================
 
 local function CreateGUI()
 
-    -- Remove old interface
     local old = parent:FindFirstChild("WordHelper")
 
     if old then
         old:Destroy()
     end
 
-    -- ========================================================
-    -- SCREEN GUI
-    -- ========================================================
-
     local screenGui = Instance.new("ScreenGui")
-
     screenGui.Name = "WordHelper"
     screenGui.ResetOnSpawn = false
-    screenGui.IgnoreGuiInset = true
+    screenGui.IgnoreGuiInset = false
     screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-
     screenGui.Parent = parent
 
-    -- ========================================================
-    -- ROOT SCALE
-    -- ========================================================
-
-    local uiScale = Instance.new("UIScale")
-    uiScale.Scale = 1
-    uiScale.Parent = screenGui
-
-    -- ========================================================
+    --=====================================================
     -- MAIN WINDOW
-    -- ========================================================
+    --=====================================================
 
     local mainFrame = Instance.new("Frame")
-
-    mainFrame.Name = "MainWindow"
-
-    mainFrame.Size =
-        UDim2.new(0, 350, 0, 475)
-
-    mainFrame.Position =
-        UDim2.new(
-            0,
-            18,
-            0.5,
-            -237
-        )
-
-    mainFrame.BackgroundColor3 =
-        COLORS.background
-
-    mainFrame.BackgroundTransparency = 0.04
-
+    mainFrame.Name = "Main"
+    mainFrame.Size = UDim2.new(0,245,0,335)
+    mainFrame.Position = UDim2.new(0,12,0.5,-167)
+    mainFrame.BackgroundColor3 = COLORS.background2
     mainFrame.BorderSizePixel = 0
-
+    mainFrame.ClipsDescendants = true
     mainFrame.Parent = screenGui
 
-    Corner(mainFrame, 15)
-
-    Stroke(
-        mainFrame,
-        COLORS.borderLight,
-        1,
-        0.25
-    )
-
-    -- outer glow
-    local glow = Instance.new("ImageLabel")
-
-    glow.BackgroundTransparency = 1
-    glow.Image =
-        "rbxassetid://5028857084"
-
-    glow.ImageColor3 =
-        Color3.fromRGB(255,255,255)
-
-    glow.ImageTransparency = 0.94
-
-    glow.ScaleType = Enum.ScaleType.Slice
-    glow.SliceCenter =
-        Rect.new(24,24,276,276)
-
-    glow.Size =
-        UDim2.new(1, 30, 1, 30)
-
-    glow.Position =
-        UDim2.new(0, -15, 0, -15)
-
-    glow.ZIndex = 0
-    glow.Parent = mainFrame
-
-    -- ========================================================
-    -- HEADER
-    -- ========================================================
-
-    local header = Instance.new("Frame")
-
-    header.Size =
-        UDim2.new(1, 0, 0, 58)
-
-    header.BackgroundColor3 =
-        COLORS.glass
-
-    header.BackgroundTransparency = 0.05
-
-    header.BorderSizePixel = 0
-
-    header.Parent = mainFrame
-
-    Corner(header, 15)
-
-    local headerBottom = Instance.new("Frame")
-
-    headerBottom.Size =
-        UDim2.new(1, 0, 0, 15)
-
-    headerBottom.Position =
-        UDim2.new(0, 0, 1, -15)
-
-    headerBottom.BackgroundColor3 =
-        COLORS.glass
-
-    headerBottom.BorderSizePixel = 0
-
-    headerBottom.Parent = header
-
-    -- icon
-    local logo = Instance.new("Frame")
-
-    logo.Size =
-        UDim2.new(0, 34, 0, 34)
-
-    logo.Position =
-        UDim2.new(0, 12, 0, 12)
-
-    logo.BackgroundColor3 =
-        COLORS.white
-
-    logo.Parent = header
-
-    Corner(logo, 9)
-
-    local logoText = MakeTitle(
-        logo,
-        "W",
-        15
-    )
-
-    logoText.Size =
-        UDim2.new(1, 0, 1, 0)
-
-    logoText.TextColor3 =
-        COLORS.black
-
-    logoText.TextXAlignment =
-        Enum.TextXAlignment.Center
-
-    logoText.TextYAlignment =
-        Enum.TextYAlignment.Center
-
-    -- title
-    local title = MakeTitle(
-        header,
-        "WORD GANG",
-        13
-    )
-
-    title.Position =
-        UDim2.new(0, 56, 0, 9)
-
-    title.Size =
-        UDim2.new(0, 160, 0, 18)
-
-    local subtitle = MakeSubtext(
-        header,
-        "LAST LETTER HELPER",
-        8
-    )
-
-    subtitle.Position =
-        UDim2.new(0, 57, 0, 29)
-
-    subtitle.Size =
-        UDim2.new(0, 150, 0, 14)
-
-    -- status dot
-    local statusDot = Instance.new("Frame")
-
-    statusDot.Size =
-        UDim2.new(0, 7, 0, 7)
-
-    statusDot.Position =
-        UDim2.new(0, 207, 0, 16)
-
-    statusDot.BackgroundColor3 =
-        COLORS.white
-
-    statusDot.BorderSizePixel = 0
-
-    statusDot.Parent = header
-
-    Corner(statusDot, 10)
-
-    -- timer
-    local timerLabel = MakeTitle(
-        header,
-        "00:00",
-        10
-    )
-
-    timerLabel.Size =
-        UDim2.new(0, 52, 0, 18)
-
-    timerLabel.Position =
-        UDim2.new(1, -165, 0, 10)
-
-    timerLabel.TextColor3 =
-        COLORS.textDim
-
-    timerLabel.TextXAlignment =
-        Enum.TextXAlignment.Right
-
-    -- controls
-    local minimizeBtn = Instance.new("TextButton")
-
-    minimizeBtn.Size =
-        UDim2.new(0, 27, 0, 27)
-
-    minimizeBtn.Position =
-        UDim2.new(1, -92, 0, 15)
-
-    minimizeBtn.Text = "—"
-
-    minimizeBtn.Font =
-        Enum.Font.GothamBold
-
-    minimizeBtn.TextSize = 13
-
-    minimizeBtn.TextColor3 =
-        COLORS.textDim
-
-    minimizeBtn.AutoButtonColor = false
-
-    minimizeBtn.Parent = header
-
-    MakeButton(minimizeBtn)
-
-    local settingsBtn = Instance.new("TextButton")
-
-    settingsBtn.Size =
-        UDim2.new(0, 27, 0, 27)
-
-    settingsBtn.Position =
-        UDim2.new(1, -60, 0, 15)
-
-    settingsBtn.Text = "⚙"
-
-    settingsBtn.Font =
-        Enum.Font.GothamBold
-
+    Corner(mainFrame,11)
+    Stroke(mainFrame,COLORS.borderBright,1,0)
+
+    -- subtle glass layer
+    local glass = Instance.new("Frame")
+    glass.Size = UDim2.new(1,0,1,0)
+    glass.BackgroundColor3 = COLORS.glass
+    glass.BackgroundTransparency = 0.975
+    glass.BorderSizePixel = 0
+    glass.ZIndex = 0
+    glass.Parent = mainFrame
+
+    Corner(glass,11)
+
+    --=====================================================
+    -- TOP BAR
+    --=====================================================
+
+    local top = Instance.new("Frame")
+    top.Size = UDim2.new(1,0,0,38)
+    top.BackgroundColor3 = COLORS.panel
+    top.BorderSizePixel = 0
+    top.ZIndex = 2
+    top.Parent = mainFrame
+
+    Corner(top,11)
+
+    local topCover = Instance.new("Frame")
+    topCover.Size = UDim2.new(1,0,0,12)
+    topCover.Position = UDim2.new(0,0,1,-12)
+    topCover.BackgroundColor3 = COLORS.panel
+    topCover.BorderSizePixel = 0
+    topCover.Parent = top
+
+    local title = AddText(top,"WORD GANG",12,COLORS.white)
+    title.Position = UDim2.new(0,12,0,0)
+    title.Size = UDim2.new(1,-95,1,0)
+    title.Font = Enum.Font.GothamBold
+
+    local tinyStatus = AddText(top,"●",9,COLORS.dim)
+    tinyStatus.Position = UDim2.new(0,84,0,0)
+    tinyStatus.Size = UDim2.new(0,15,1,0)
+    tinyStatus.TextXAlignment = Enum.TextXAlignment.Center
+
+    local timerLabel = AddText(top,"00:00",9,COLORS.dim)
+    timerLabel.Position = UDim2.new(1,-78,0,0)
+    timerLabel.Size = UDim2.new(0,45,1,0)
+    timerLabel.TextXAlignment = Enum.TextXAlignment.Right
+
+    local settingsBtn = MakeButton(top,"⚙")
+    settingsBtn.Size = UDim2.new(0,28,0,26)
+    settingsBtn.Position = UDim2.new(1,-34,0,6)
     settingsBtn.TextSize = 13
 
-    settingsBtn.TextColor3 =
-        COLORS.textDim
+    --=====================================================
+    -- MINIMIZE
+    --=====================================================
 
-    settingsBtn.AutoButtonColor = false
+    local minimizeBtn = MakeButton(top,"−")
+    minimizeBtn.Size = UDim2.new(0,25,0,26)
+    minimizeBtn.Position = UDim2.new(1,-63,0,6)
+    minimizeBtn.TextSize = 15
 
-    settingsBtn.Parent = header
+    --=====================================================
+    -- CONTENT
+    --=====================================================
 
-    MakeButton(settingsBtn)
+    local content = Instance.new("Frame")
+    content.Size = UDim2.new(1,-14,1,-48)
+    content.Position = UDim2.new(0,7,0,44)
+    content.BackgroundTransparency = 1
+    content.Parent = mainFrame
 
-    local closeBtn = Instance.new("TextButton")
+    --=====================================================
+    -- STATUS
+    --=====================================================
 
-    closeBtn.Size =
-        UDim2.new(0, 27, 0, 27)
+    local statusBar = Instance.new("Frame")
+    statusBar.Size = UDim2.new(1,0,0,24)
+    statusBar.BackgroundColor3 = COLORS.panel
+    statusBar.BorderSizePixel = 0
+    statusBar.Parent = content
 
-    closeBtn.Position =
-        UDim2.new(1, -28, 0, 15)
+    Corner(statusBar,7)
+    Stroke(statusBar,COLORS.border,1,0)
 
-    closeBtn.AnchorPoint =
-        Vector2.new(1, 0)
+    local statusLabel = AddText(statusBar,"loading dictionary...",9,COLORS.dim)
+    statusLabel.Position = UDim2.new(0,9,0,0)
+    statusLabel.Size = UDim2.new(0.68,0,1,0)
 
-    closeBtn.Text = "×"
+    local wordCountLabel = AddText(statusBar,"0",9,COLORS.muted)
+    wordCountLabel.Position = UDim2.new(0.68,0,0,0)
+    wordCountLabel.Size = UDim2.new(0.32,-8,1,0)
+    wordCountLabel.TextXAlignment = Enum.TextXAlignment.Right
 
-    closeBtn.Font =
-        Enum.Font.GothamBold
+    --=====================================================
+    -- PREFIX / AUTO ROW
+    --=====================================================
 
-    closeBtn.TextSize = 16
+    local prefixFrame = Instance.new("Frame")
+    prefixFrame.Size = UDim2.new(1,0,0,34)
+    prefixFrame.Position = UDim2.new(0,0,0,29)
+    prefixFrame.BackgroundColor3 = COLORS.panel
+    prefixFrame.BorderSizePixel = 0
+    prefixFrame.Parent = content
 
-    closeBtn.TextColor3 =
-        COLORS.textDim
+    Corner(prefixFrame,7)
+    Stroke(prefixFrame,COLORS.border,1,0)
 
-    closeBtn.AutoButtonColor = false
+    local prefixSmall = AddText(prefixFrame,"PREFIX",7,COLORS.muted)
+    prefixSmall.Position = UDim2.new(0,9,0,1)
+    prefixSmall.Size = UDim2.new(0,45,0,12)
+    prefixSmall.Font = Enum.Font.GothamBold
 
-    closeBtn.Parent = header
+    local prefixValue = AddText(prefixFrame,"...",11,COLORS.white)
+    prefixValue.Position = UDim2.new(0,9,0,12)
+    prefixValue.Size = UDim2.new(1,-82,0,19)
+    prefixValue.Font = Enum.Font.GothamBold
 
-    MakeButton(closeBtn)
+    local autoPlayBtn = MakeButton(prefixFrame,"AUTO")
+    autoPlayBtn.Size = UDim2.new(0,58,0,25)
+    autoPlayBtn.Position = UDim2.new(1,-64,0,5)
+    autoPlayBtn.TextSize = 8
 
-    -- ========================================================
-    -- DRAG
-    -- ========================================================
+    autoPlayBtn.MouseButton1Click:Connect(function()
+        settings.autoPlay = not settings.autoPlay
+        isAutoPlaying = settings.autoPlay
+
+        if settings.autoPlay then
+            autoPlayBtn.Text = "AUTO ON"
+            autoPlayBtn.TextColor3 = COLORS.white
+            autoPlayBtn.BackgroundColor3 = COLORS.buttonHover
+            tinyStatus.TextColor3 = COLORS.white
+
+            task.spawn(AutoPlayLoop)
+        else
+            autoPlayBtn.Text = "AUTO"
+            autoPlayBtn.TextColor3 = COLORS.text
+            autoPlayBtn.BackgroundColor3 = COLORS.button
+            tinyStatus.TextColor3 = COLORS.dim
+        end
+    end)
+
+    --=====================================================
+    -- SUGGESTIONS
+    --=====================================================
+
+    local suggestionsFrame = Instance.new("ScrollingFrame")
+    suggestionsFrame.Name = "Suggestions"
+    suggestionsFrame.Size = UDim2.new(1,0,1,-69)
+    suggestionsFrame.Position = UDim2.new(0,0,0,68)
+    suggestionsFrame.BackgroundTransparency = 1
+    suggestionsFrame.BorderSizePixel = 0
+    suggestionsFrame.ScrollBarThickness = 2
+    suggestionsFrame.ScrollBarImageTransparency = 0.25
+    suggestionsFrame.CanvasSize = UDim2.new(0,0,0,0)
+    suggestionsFrame.Parent = content
+
+    local list = Instance.new("UIListLayout")
+    list.SortOrder = Enum.SortOrder.LayoutOrder
+    list.Padding = UDim.new(0,3)
+    list.Parent = suggestionsFrame
+
+    local suggestionButtons = {}
+
+    for i = 1,SUGGESTION_COUNT do
+
+        local row = Instance.new("TextButton")
+        row.Name = "Suggestion_" .. i
+        row.Size = UDim2.new(1,0,0,23)
+        row.BackgroundColor3 = COLORS.panel
+        row.BackgroundTransparency = 0
+        row.BorderSizePixel = 0
+        row.Text = ""
+        row.TextColor3 = COLORS.text
+        row.TextSize = 10
+        row.Font = Enum.Font.GothamMedium
+        row.TextXAlignment = Enum.TextXAlignment.Left
+        row.RichText = true
+        row.AutoButtonColor = false
+        row.Visible = false
+        row.Parent = suggestionsFrame
+
+        Corner(row,6)
+        Stroke(row,COLORS.border,1,0)
+        Padding(row,9,6,0,0)
+
+        row.MouseEnter:Connect(function()
+            row.BackgroundColor3 = COLORS.buttonHover
+        end)
+
+        row.MouseLeave:Connect(function()
+            row.BackgroundColor3 = COLORS.panel
+        end)
+
+        row.MouseButton1Click:Connect(function()
+            local raw = row.Text
+
+            local cleanWord = raw:gsub("<[^>]*>","")
+
+            if cleanWord ~= "" then
+                TypeWord(cleanWord)
+            end
+        end)
+
+        table.insert(suggestionButtons,row)
+    end
+
+    --=====================================================
+    -- DRAGGING
+    --=====================================================
 
     local dragging = false
     local dragStart
     local startPosition
 
-    header.InputBegan:Connect(function(input)
-
-        if input.UserInputType ==
-            Enum.UserInputType.MouseButton1
-            or input.UserInputType ==
-            Enum.UserInputType.Touch then
+    top.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch then
 
             dragging = true
             dragStart = input.Position
@@ -1506,913 +1153,263 @@ local function CreateGUI()
         end
     end)
 
-    header.InputEnded:Connect(function(input)
-
-        if input.UserInputType ==
-            Enum.UserInputType.MouseButton1
-            or input.UserInputType ==
-            Enum.UserInputType.Touch then
+    top.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch then
 
             dragging = false
         end
     end)
 
     UserInputService.InputChanged:Connect(function(input)
+        if dragging then
+            if input.UserInputType == Enum.UserInputType.MouseMovement
+                or input.UserInputType == Enum.UserInputType.Touch then
 
-        if not dragging then
-            return
-        end
+                local delta = input.Position - dragStart
 
-        if input.UserInputType ==
-            Enum.UserInputType.MouseMovement
-            or input.UserInputType ==
-            Enum.UserInputType.Touch then
-
-            local delta =
-                input.Position - dragStart
-
-            mainFrame.Position =
-                UDim2.new(
+                mainFrame.Position = UDim2.new(
                     startPosition.X.Scale,
                     startPosition.X.Offset + delta.X,
                     startPosition.Y.Scale,
                     startPosition.Y.Offset + delta.Y
                 )
-        end
-    end)
-
-    -- ========================================================
-    -- CONTENT
-    -- ========================================================
-
-    local content = Instance.new("Frame")
-
-    content.Size =
-        UDim2.new(1, -16, 1, -66)
-
-    content.Position =
-        UDim2.new(0, 8, 0, 62)
-
-    content.BackgroundTransparency = 1
-
-    content.Parent = mainFrame
-
-    -- ========================================================
-    -- STATUS CARD
-    -- ========================================================
-
-    local statusCard = Instance.new("Frame")
-
-    statusCard.Size =
-        UDim2.new(1, 0, 0, 48)
-
-    statusCard.BackgroundColor3 =
-        COLORS.glass2
-
-    statusCard.BackgroundTransparency = 0.1
-
-    statusCard.Parent = content
-
-    Corner(statusCard, 10)
-
-    Stroke(
-        statusCard,
-        COLORS.border,
-        1,
-        0.35
-    )
-
-    local statusTitle = MakeSubtext(
-        statusCard,
-        "STATUS",
-        7
-    )
-
-    statusTitle.Position =
-        UDim2.new(0, 12, 0, 6)
-
-    statusTitle.Size =
-        UDim2.new(0, 60, 0, 11)
-
-    local statusLabel = MakeTitle(
-        statusCard,
-        "READY",
-        10
-    )
-
-    statusLabel.Position =
-        UDim2.new(0, 12, 0, 20)
-
-    statusLabel.Size =
-        UDim2.new(0.65, 0, 0, 17)
-
-    statusLabel.TextColor3 =
-        COLORS.textDim
-
-    local wordCountLabel = MakeSubtext(
-        statusCard,
-        "0 words",
-        8
-    )
-
-    wordCountLabel.Position =
-        UDim2.new(0.65, 0, 0, 19)
-
-    wordCountLabel.Size =
-        UDim2.new(0.35, -12, 0, 17)
-
-    wordCountLabel.TextXAlignment =
-        Enum.TextXAlignment.Right
-
-    -- ========================================================
-    -- PREFIX CARD
-    -- ========================================================
-
-    local prefixCard = Instance.new("Frame")
-
-    prefixCard.Size =
-        UDim2.new(1, 0, 0, 58)
-
-    prefixCard.Position =
-        UDim2.new(0, 0, 0, 55)
-
-    prefixCard.BackgroundColor3 =
-        COLORS.glass2
-
-    prefixCard.BackgroundTransparency = 0.08
-
-    prefixCard.Parent = content
-
-    Corner(prefixCard, 10)
-
-    Stroke(
-        prefixCard,
-        COLORS.border,
-        1,
-        0.35
-    )
-
-    local prefixSmall = MakeSubtext(
-        prefixCard,
-        "CURRENT PREFIX",
-        7
-    )
-
-    prefixSmall.Position =
-        UDim2.new(0, 12, 0, 7)
-
-    prefixSmall.Size =
-        UDim2.new(0, 110, 0, 12)
-
-    local prefixValue = MakeTitle(
-        prefixCard,
-        "...",
-        16
-    )
-
-    prefixValue.Position =
-        UDim2.new(0, 12, 0, 20)
-
-    prefixValue.Size =
-        UDim2.new(0.55, 0, 0, 28)
-
-    prefixValue.TextColor3 =
-        COLORS.white
-
-    -- AUTO BUTTON
-    local autoPlayBtn = Instance.new("TextButton")
-
-    autoPlayBtn.Size =
-        UDim2.new(0, 78, 0, 30)
-
-    autoPlayBtn.Position =
-        UDim2.new(1, -89, 0, 14)
-
-    autoPlayBtn.Text =
-        "▶  AUTO"
-
-    autoPlayBtn.Font =
-        Enum.Font.GothamBold
-
-    autoPlayBtn.TextSize = 9
-
-    autoPlayBtn.TextColor3 =
-        COLORS.textDim
-
-    autoPlayBtn.AutoButtonColor = false
-
-    autoPlayBtn.Parent = prefixCard
-
-    MakeButton(autoPlayBtn)
-
-    autoPlayBtn.MouseButton1Click:Connect(function()
-
-        settings.autoPlay =
-            not settings.autoPlay
-
-        isAutoPlaying =
-            settings.autoPlay
-
-        if settings.autoPlay then
-
-            autoPlayBtn.Text =
-                "■  AUTO"
-
-            autoPlayBtn.TextColor3 =
-                COLORS.black
-
-            Tween(
-                autoPlayBtn,
-                {
-                    BackgroundColor3 =
-                        COLORS.white
-                },
-                0.15
-            )
-
-            statusLabel.Text =
-                "AUTO PLAY ACTIVE"
-
-            task.spawn(AutoPlayLoop)
-
-        else
-
-            autoPlayBtn.Text =
-                "▶  AUTO"
-
-            autoPlayBtn.TextColor3 =
-                COLORS.textDim
-
-            Tween(
-                autoPlayBtn,
-                {
-                    BackgroundColor3 =
-                        COLORS.glass2
-                },
-                0.15
-            )
-
-            statusLabel.Text =
-                "READY"
-        end
-    end)
-
-    -- ========================================================
-    -- SUGGESTION HEADER
-    -- ========================================================
-
-    local suggestionHeader = Instance.new("Frame")
-
-    suggestionHeader.Size =
-        UDim2.new(1, 0, 0, 30)
-
-    suggestionHeader.Position =
-        UDim2.new(0, 0, 0, 121)
-
-    suggestionHeader.BackgroundTransparency = 1
-
-    suggestionHeader.Parent = content
-
-    local suggestionTitle = MakeTitle(
-        suggestionHeader,
-        "SUGGESTIONS",
-        9
-    )
-
-    suggestionTitle.Size =
-        UDim2.new(0.5, 0, 1, 0)
-
-    suggestionTitle.TextColor3 =
-        COLORS.textDim
-
-    local hint = MakeSubtext(
-        suggestionHeader,
-        "CLICK A WORD TO TYPE",
-        7
-    )
-
-    hint.Size =
-        UDim2.new(0.5, 0, 1, 0)
-
-    hint.Position =
-        UDim2.new(0.5, 0, 0, 0)
-
-    hint.TextXAlignment =
-        Enum.TextXAlignment.Right
-
-    -- ========================================================
-    -- SUGGESTIONS
-    -- ========================================================
-
-    local suggestionsFrame = Instance.new("ScrollingFrame")
-
-    suggestionsFrame.Name =
-        "Suggestions"
-
-    suggestionsFrame.Size =
-        UDim2.new(1, 0, 1, -158)
-
-    suggestionsFrame.Position =
-        UDim2.new(0, 0, 0, 148)
-
-    suggestionsFrame.BackgroundTransparency = 1
-
-    suggestionsFrame.BorderSizePixel = 0
-
-    suggestionsFrame.ScrollBarThickness = 3
-
-    suggestionsFrame.ScrollBarImageColor3 =
-        COLORS.borderLight
-
-    suggestionsFrame.CanvasSize =
-        UDim2.new(0, 0, 0, 0)
-
-    suggestionsFrame.AutomaticCanvasSize =
-        Enum.AutomaticSize.None
-
-    suggestionsFrame.Parent = content
-
-    local list = Instance.new("UIListLayout")
-
-    list.SortOrder =
-        Enum.SortOrder.LayoutOrder
-
-    list.Padding =
-        UDim.new(0, 5)
-
-    list.Parent =
-        suggestionsFrame
-
-    local suggestionButtons = {}
-
-    -- ========================================================
-    -- SUGGESTION CARDS
-    -- ========================================================
-
-    for i = 1, SUGGESTION_COUNT do
-
-        local card = Instance.new("TextButton")
-
-        card.Name =
-            "Suggestion_" .. i
-
-        card.Size =
-            UDim2.new(1, -2, 0, 34)
-
-        card.BackgroundColor3 =
-            COLORS.glass2
-
-        card.BackgroundTransparency = 0.08
-
-        card.Text = ""
-
-        card.TextColor3 =
-            COLORS.text
-
-        card.TextSize = 11
-
-        card.Font =
-            Enum.Font.GothamMedium
-
-        card.RichText = true
-
-        card.AutoButtonColor = false
-
-        card.Visible = false
-
-        card.Parent =
-            suggestionsFrame
-
-        Corner(card, 9)
-
-        local cardStroke =
-            Stroke(
-                card,
-                COLORS.border,
-                1,
-                0.4
-            )
-
-        -- number
-        local number = MakeSubtext(
-            card,
-            string.format("%02d", i),
-            8
-        )
-
-        number.Size =
-            UDim2.new(0, 28, 1, 0)
-
-        number.Position =
-            UDim2.new(0, 10, 0, 0)
-
-        number.TextColor3 =
-            COLORS.muted
-
-        number.TextYAlignment =
-            Enum.TextYAlignment.Center
-
-        -- word
-        local wordLabel = MakeTitle(
-            card,
-            "",
-            11
-        )
-
-        wordLabel.Size =
-            UDim2.new(1, -60, 1, 0)
-
-        wordLabel.Position =
-            UDim2.new(0, 40, 0, 0)
-
-        wordLabel.TextYAlignment =
-            Enum.TextYAlignment.Center
-
-        wordLabel.RichText = true
-
-        -- arrow
-        local arrow = MakeSubtext(
-            card,
-            "›",
-            17
-        )
-
-        arrow.Size =
-            UDim2.new(0, 20, 1, 0)
-
-        arrow.Position =
-            UDim2.new(1, -28, 0, 0)
-
-        arrow.TextXAlignment =
-            Enum.TextXAlignment.Center
-
-        arrow.TextYAlignment =
-            Enum.TextYAlignment.Center
-
-        card.MouseEnter:Connect(function()
-
-            Tween(
-                card,
-                {
-                    BackgroundColor3 =
-                        COLORS.glass3
-                },
-                0.12
-            )
-
-            Tween(
-                cardStroke,
-                {
-                    Color =
-                        COLORS.borderLight,
-                    Transparency = 0
-                },
-                0.12
-            )
-
-            Tween(
-                arrow,
-                {
-                    TextColor3 =
-                        COLORS.white
-                },
-                0.12
-            )
-        end)
-
-        card.MouseLeave:Connect(function()
-
-            Tween(
-                card,
-                {
-                    BackgroundColor3 =
-                        COLORS.glass2
-                },
-                0.12
-            )
-
-            Tween(
-                cardStroke,
-                {
-                    Color =
-                        COLORS.border,
-                    Transparency = 0.4
-                },
-                0.12
-            )
-
-            Tween(
-                arrow,
-                {
-                    TextColor3 =
-                        COLORS.muted
-                },
-                0.12
-            )
-        end)
-
-        card.MouseButton1Click:Connect(function()
-
-            local word =
-                card:GetAttribute("Word")
-
-            if word and word ~= "" then
-                TypeWord(word)
             end
-        end)
+        end
+    end)
 
-        table.insert(
-            suggestionButtons,
-            {
-                button = card,
-                label = wordLabel
-            }
-        )
-    end
+    --=====================================================
+    -- MINIMIZE
+    --=====================================================
 
-    -- ========================================================
-    -- BOTTOM INFO BAR
-    -- ========================================================
+    local minimized = false
 
-    local bottomBar = Instance.new("Frame")
+    minimizeBtn.MouseButton1Click:Connect(function()
+        minimized = not minimized
 
-    bottomBar.Size =
-        UDim2.new(1, 0, 0, 28)
+        content.Visible = not minimized
+        minimizeBtn.Text = minimized and "+" or "−"
 
-    bottomBar.Position =
-        UDim2.new(0, 0, 1, -30)
+        if minimized then
+            mainFrame.Size = UDim2.new(0,245,0,38)
+        else
+            mainFrame.Size = UDim2.new(0,245,0,335)
+        end
+    end)
 
-    bottomBar.BackgroundTransparency = 1
-
-    bottomBar.Parent = content
-
-    local leftInfo = MakeSubtext(
-        bottomBar,
-        "DICTIONARY",
-        7
-    )
-
-    leftInfo.Size =
-        UDim2.new(0.3, 0, 1, 0)
-
-    leftInfo.TextYAlignment =
-        Enum.TextYAlignment.Center
-
-    local rightInfo = MakeSubtext(
-        bottomBar,
-        "READY",
-        7
-    )
-
-    rightInfo.Size =
-        UDim2.new(0.7, 0, 1, 0)
-
-    rightInfo.Position =
-        UDim2.new(0.3, 0, 0, 0)
-
-    rightInfo.TextXAlignment =
-        Enum.TextXAlignment.Right
-
-    rightInfo.TextYAlignment =
-        Enum.TextYAlignment.Center
-
-    -- ========================================================
+    --=====================================================
     -- SETTINGS WINDOW
-    -- ========================================================
+    --=====================================================
 
     local settingsFrame = Instance.new("Frame")
-
-    settingsFrame.Name =
-        "Settings"
-
-    settingsFrame.Size =
-        UDim2.new(0, 335, 0, 500)
-
-    settingsFrame.Position =
-        UDim2.new(
-            0.5,
-            25,
-            0.5,
-            -250
-        )
-
-    settingsFrame.BackgroundColor3 =
-        COLORS.background
-
-    settingsFrame.BackgroundTransparency = 0.02
-
+    settingsFrame.Name = "Settings"
+    settingsFrame.Size = UDim2.new(0,235,0,365)
+    settingsFrame.Position = UDim2.new(0,265,0.5,-182)
+    settingsFrame.BackgroundColor3 = COLORS.background2
     settingsFrame.BorderSizePixel = 0
-
+    settingsFrame.ClipsDescendants = true
     settingsFrame.Visible = false
+    settingsFrame.Parent = screenGui
 
-    settingsFrame.Parent =
-        screenGui
+    Corner(settingsFrame,11)
+    Stroke(settingsFrame,COLORS.borderBright,1,0)
 
-    Corner(settingsFrame, 15)
+    local settingsGlass = Instance.new("Frame")
+    settingsGlass.Size = UDim2.new(1,0,1,0)
+    settingsGlass.BackgroundColor3 = COLORS.glass
+    settingsGlass.BackgroundTransparency = 0.975
+    settingsGlass.BorderSizePixel = 0
+    settingsGlass.Parent = settingsFrame
 
-    Stroke(
-        settingsFrame,
-        COLORS.borderLight,
-        1,
-        0.2
-    )
+    Corner(settingsGlass,11)
 
-    -- ========================================================
-    -- SETTINGS HEADER
-    -- ========================================================
+    --=====================================================
+    -- SETTINGS TOP
+    --=====================================================
 
-    local settingsHeader =
-        Instance.new("Frame")
+    local settingsTop = Instance.new("Frame")
+    settingsTop.Size = UDim2.new(1,0,0,38)
+    settingsTop.BackgroundColor3 = COLORS.panel
+    settingsTop.BorderSizePixel = 0
+    settingsTop.ZIndex = 2
+    settingsTop.Parent = settingsFrame
 
-    settingsHeader.Size =
-        UDim2.new(1, 0, 0, 56)
+    Corner(settingsTop,11)
 
-    settingsHeader.BackgroundColor3 =
-        COLORS.glass
+    local settingsCover = Instance.new("Frame")
+    settingsCover.Size = UDim2.new(1,0,0,12)
+    settingsCover.Position = UDim2.new(0,0,1,-12)
+    settingsCover.BackgroundColor3 = COLORS.panel
+    settingsCover.BorderSizePixel = 0
+    settingsCover.Parent = settingsTop
 
-    settingsHeader.BorderSizePixel = 0
+    local settingsTitle = AddText(settingsTop,"SETTINGS",11,COLORS.white)
+    settingsTitle.Position = UDim2.new(0,12,0,0)
+    settingsTitle.Size = UDim2.new(1,-48,1,0)
+    settingsTitle.Font = Enum.Font.GothamBold
 
-    settingsHeader.Parent =
-        settingsFrame
+    local closeSettingsBtn = MakeButton(settingsTop,"×")
+    closeSettingsBtn.Size = UDim2.new(0,27,0,26)
+    closeSettingsBtn.Position = UDim2.new(1,-33,0,6)
+    closeSettingsBtn.TextSize = 16
 
-    Corner(settingsHeader, 15)
+    closeSettingsBtn.MouseButton1Click:Connect(function()
+        settingsFrame.Visible = false
+    end)
 
-    local settingsHeaderBottom =
-        Instance.new("Frame")
-
-    settingsHeaderBottom.Size =
-        UDim2.new(1, 0, 0, 15)
-
-    settingsHeaderBottom.Position =
-        UDim2.new(0, 0, 1, -15)
-
-    settingsHeaderBottom.BackgroundColor3 =
-        COLORS.glass
-
-    settingsHeaderBottom.BorderSizePixel = 0
-
-    settingsHeaderBottom.Parent =
-        settingsHeader
-
-    local settingsTitle =
-        MakeTitle(
-            settingsHeader,
-            "SETTINGS",
-            13
-        )
-
-    settingsTitle.Size =
-        UDim2.new(1, -70, 0, 20)
-
-    settingsTitle.Position =
-        UDim2.new(0, 14, 0, 10)
-
-    local settingsSubtitle =
-        MakeSubtext(
-            settingsHeader,
-            "CONFIGURE WORD GANG",
-            7
-        )
-
-    settingsSubtitle.Size =
-        UDim2.new(1, -70, 0, 14)
-
-    settingsSubtitle.Position =
-        UDim2.new(0, 14, 0, 29)
-
-    local closeSettings =
-        Instance.new("TextButton")
-
-    closeSettings.Size =
-        UDim2.new(0, 30, 0, 30)
-
-    closeSettings.Position =
-        UDim2.new(1, -42, 0, 13)
-
-    closeSettings.Text = "×"
-
-    closeSettings.TextColor3 =
-        COLORS.textDim
-
-    closeSettings.TextSize = 17
-
-    closeSettings.Font =
-        Enum.Font.GothamBold
-
-    closeSettings.AutoButtonColor = false
-
-    closeSettings.Parent =
-        settingsHeader
-
-    MakeButton(closeSettings)
-
-    -- ========================================================
+    --=====================================================
     -- SETTINGS CONTENT
-    -- ========================================================
+    --=====================================================
 
-    local settingsContent =
-        Instance.new("ScrollingFrame")
-
-    settingsContent.Size =
-        UDim2.new(1, -12, 1, -65)
-
-    settingsContent.Position =
-        UDim2.new(0, 6, 0, 60)
-
+    local settingsContent = Instance.new("ScrollingFrame")
+    settingsContent.Size = UDim2.new(1,-12,1,-45)
+    settingsContent.Position = UDim2.new(0,6,0,44)
     settingsContent.BackgroundTransparency = 1
-
     settingsContent.BorderSizePixel = 0
+    settingsContent.ScrollBarThickness = 2
+    settingsContent.CanvasSize = UDim2.new(0,0,0,500)
+    settingsContent.Parent = settingsFrame
 
-    settingsContent.ScrollBarThickness = 3
+    local settingsList = Instance.new("UIListLayout")
+    settingsList.SortOrder = Enum.SortOrder.LayoutOrder
+    settingsList.Padding = UDim.new(0,5)
+    settingsList.Parent = settingsContent
 
-    settingsContent.ScrollBarImageColor3 =
-        COLORS.borderLight
+    local function Section(text)
 
-    settingsContent.CanvasSize =
-        UDim2.new(0, 0, 0, 650)
+        local holder = Instance.new("Frame")
+        holder.Size = UDim2.new(1,0,0,19)
+        holder.BackgroundTransparency = 1
+        holder.Parent = settingsContent
 
-    settingsContent.Parent =
-        settingsFrame
+        local line = Instance.new("Frame")
+        line.Size = UDim2.new(0,3,0,12)
+        line.Position = UDim2.new(0,2,0,3)
+        line.BackgroundColor3 = COLORS.white
+        line.BorderSizePixel = 0
+        line.Parent = holder
 
-    -- ========================================================
-    -- GENERAL SECTION
-    -- ========================================================
+        Corner(line,2)
 
-    local generalLabel =
-        MakeSubtext(
-            settingsContent,
-            "GENERAL",
-            7
-        )
+        local label = AddText(holder,text,8,COLORS.muted)
+        label.Position = UDim2.new(0,11,0,0)
+        label.Size = UDim2.new(1,-11,1,0)
+        label.Font = Enum.Font.GothamBold
 
-    generalLabel.Position =
-        UDim2.new(0, 10, 0, 5)
+        return holder
+    end
 
-    generalLabel.Size =
-        UDim2.new(1, -20, 0, 15)
+    local function SettingRow(labelText,height)
 
+        local row = Instance.new("Frame")
+        row.Size = UDim2.new(1,0,0,height or 29)
+        row.BackgroundColor3 = COLORS.panel
+        row.BorderSizePixel = 0
+        row.Parent = settingsContent
+
+        Corner(row,6)
+        Stroke(row,COLORS.border,1,0)
+
+        local label = AddText(row,labelText,9,COLORS.dim)
+        label.Position = UDim2.new(0,9,0,0)
+        label.Size = UDim2.new(0.58,0,1,0)
+
+        return row
+    end
+
+    --=====================================================
     -- WPM
-    local wpmRow =
-        AddSettingRow(
-            settingsContent,
-            24,
-            "Typing speed",
-            "Words per minute"
-        )
+    --=====================================================
 
-    local wpmInput =
-        MakeInput(
-            wpmRow,
-            settings.wpm
-        )
+    Section("TYPING")
 
-    wpmInput.Size =
-        UDim2.new(0, 60, 0, 25)
+    local wpmRow = SettingRow("WPM")
+    local wpmInput = MakeInput(wpmRow,"300")
 
-    wpmInput.Position =
-        UDim2.new(1, -70, 0.5, -12)
+    wpmInput.Size = UDim2.new(0,62,0,21)
+    wpmInput.Position = UDim2.new(1,-69,0,4)
 
     wpmInput.FocusLost:Connect(function()
-
-        local val =
-            tonumber(wpmInput.Text)
+        local val = tonumber(wpmInput.Text)
 
         if val then
-            settings.wpm =
-                math.clamp(
-                    val,
-                    50,
-                    700
-                )
+            settings.wpm = math.clamp(val,50,700)
         end
 
-        wpmInput.Text =
-            tostring(settings.wpm)
+        wpmInput.Text = tostring(settings.wpm)
     end)
 
+    --=====================================================
     -- HUMAN
-    local humanRow =
-        AddSettingRow(
-            settingsContent,
-            71,
-            "Human mode",
-            "Natural typing variation"
-        )
+    --=====================================================
 
-    local humanToggle =
-        MakeToggle(
-            humanRow,
-            settings.humanMode,
-            function(state)
-                settings.humanMode = state
-            end
-        )
+    local humanRow = SettingRow("Human Mode")
+    local humanToggle = MakeButton(humanRow,"ON")
 
-    humanToggle.Position =
-        UDim2.new(1, -68, 0.5, -12)
+    humanToggle.Size = UDim2.new(0,48,0,21)
+    humanToggle.Position = UDim2.new(1,-55,0,4)
 
+    humanToggle.BackgroundColor3 = COLORS.buttonHover
+
+    humanToggle.MouseButton1Click:Connect(function()
+        settings.humanMode = not settings.humanMode
+
+        humanToggle.Text = settings.humanMode and "ON" or "OFF"
+        humanToggle.BackgroundColor3 =
+            settings.humanMode and COLORS.buttonHover or COLORS.button
+    end)
+
+    --=====================================================
     -- MISTAKES
-    local mistakeRow =
-        AddSettingRow(
-            settingsContent,
-            118,
-            "Mistake chance",
-            "Typing error percentage"
-        )
+    --=====================================================
 
-    local mistakeInput =
-        MakeInput(
-            mistakeRow,
-            settings.mistakeChance
-        )
+    local mistakeRow = SettingRow("Mistake Chance")
 
-    mistakeInput.Size =
-        UDim2.new(0, 60, 0, 25)
-
-    mistakeInput.Position =
-        UDim2.new(1, -70, 0.5, -12)
+    local mistakeInput = MakeInput(mistakeRow,"5")
+    mistakeInput.Size = UDim2.new(0,48,0,21)
+    mistakeInput.Position = UDim2.new(1,-55,0,4)
 
     mistakeInput.FocusLost:Connect(function()
-
-        local val =
-            tonumber(mistakeInput.Text)
+        local val = tonumber(mistakeInput.Text)
 
         if val then
-            settings.mistakeChance =
-                math.clamp(
-                    val,
-                    0,
-                    30
-                )
+            settings.mistakeChance = math.clamp(val,0,30)
         end
 
-        mistakeInput.Text =
-            tostring(settings.mistakeChance)
+        mistakeInput.Text = tostring(settings.mistakeChance)
     end)
 
+    --=====================================================
     -- AUTO DELAY
-    local delayRow =
-        AddSettingRow(
-            settingsContent,
-            165,
-            "Auto delay",
-            "Delay between automatic answers"
-        )
+    --=====================================================
 
-    local delayInput =
-        MakeInput(
-            delayRow,
-            settings.autoPlayDelay
-        )
+    local delayRow = SettingRow("Auto Delay")
 
-    delayInput.Size =
-        UDim2.new(0, 60, 0, 25)
-
-    delayInput.Position =
-        UDim2.new(1, -70, 0.5, -12)
+    local delayInput = MakeInput(delayRow,"1.5")
+    delayInput.Size = UDim2.new(0,48,0,21)
+    delayInput.Position = UDim2.new(1,-55,0,4)
 
     delayInput.FocusLost:Connect(function()
-
-        local val =
-            tonumber(delayInput.Text)
+        local val = tonumber(delayInput.Text)
 
         if val then
-            settings.autoPlayDelay =
-                math.max(
-                    0.5,
-                    val
-                )
+            settings.autoPlayDelay = math.max(0.5,val)
         end
 
-        delayInput.Text =
-            tostring(settings.autoPlayDelay)
+        delayInput.Text = tostring(settings.autoPlayDelay)
     end)
 
-    -- ========================================================
-    -- WORD SECTION
-    -- ========================================================
+    --=====================================================
+    -- BEHAVIOR
+    --=====================================================
 
-    local wordSection =
-        MakeSubtext(
-            settingsContent,
-            "WORD FILTER",
-            7
-        )
+    Section("BEHAVIOR")
 
-    wordSection.Position =
-        UDim2.new(0, 10, 0, 215)
+    local filterRow = SettingRow("Word Filter")
+    local filterBtn = MakeButton(filterRow,"ALL")
 
-    wordSection.Size =
-        UDim2.new(1, -20, 0, 15)
-
-    -- filter
-    local filterRow =
-        AddSettingRow(
-            settingsContent,
-            234,
-            "Word filter",
-            "Choose the type of suggestions"
-        )
+    filterBtn.Size = UDim2.new(0,68,0,21)
+    filterBtn.Position = UDim2.new(1,-75,0,4)
 
     local filterModes = {
         "all",
@@ -2432,54 +1429,24 @@ local function CreateGUI()
 
     local filterIndex = 1
 
-    local filterButton =
-        Instance.new("TextButton")
+    filterBtn.MouseButton1Click:Connect(function()
+        filterIndex = filterIndex % #filterModes + 1
 
-    filterButton.Size =
-        UDim2.new(0, 76, 0, 25)
-
-    filterButton.Position =
-        UDim2.new(1, -86, 0.5, -12)
-
-    filterButton.Text = "ALL"
-
-    filterButton.TextColor3 =
-        COLORS.text
-
-    filterButton.TextSize = 8
-
-    filterButton.Font =
-        Enum.Font.GothamBold
-
-    filterButton.AutoButtonColor = false
-
-    filterButton.Parent =
-        filterRow
-
-    MakeButton(filterButton)
-
-    filterButton.MouseButton1Click:Connect(function()
-
-        filterIndex =
-            filterIndex % #filterModes + 1
-
-        settings.wordFilter =
-            filterModes[filterIndex]
-
-        filterButton.Text =
-            filterNames[filterIndex]
+        settings.wordFilter = filterModes[filterIndex]
+        filterBtn.Text = filterNames[filterIndex]
 
         UpdateFilteredDictionary()
     end)
 
+    --=====================================================
     -- PRIORITY
-    local priorityRow =
-        AddSettingRow(
-            settingsContent,
-            281,
-            "Priority mode",
-            "How suggestions are ordered"
-        )
+    --=====================================================
+
+    local priorityRow = SettingRow("Priority")
+
+    local priorityBtn = MakeButton(priorityRow,"BALANCED")
+    priorityBtn.Size = UDim2.new(0,90,0,21)
+    priorityBtn.Position = UDim2.new(1,-97,0,4)
 
     local priorityModes = {
         "balanced",
@@ -2495,299 +1462,186 @@ local function CreateGUI()
 
     local priorityIndex = 1
 
-    local priorityButton =
-        Instance.new("TextButton")
+    priorityBtn.MouseButton1Click:Connect(function()
+        priorityIndex = priorityIndex % #priorityModes + 1
 
-    priorityButton.Size =
-        UDim2.new(0, 76, 0, 25)
-
-    priorityButton.Position =
-        UDim2.new(1, -86, 0.5, -12)
-
-    priorityButton.Text =
-        "BALANCED"
-
-    priorityButton.TextColor3 =
-        COLORS.text
-
-    priorityButton.TextSize = 7
-
-    priorityButton.Font =
-        Enum.Font.GothamBold
-
-    priorityButton.AutoButtonColor = false
-
-    priorityButton.Parent =
-        priorityRow
-
-    MakeButton(priorityButton)
-
-    priorityButton.MouseButton1Click:Connect(function()
-
-        priorityIndex =
-            priorityIndex % #priorityModes + 1
-
-        settings.priorityMode =
-            priorityModes[priorityIndex]
-
-        priorityButton.Text =
-            priorityNames[priorityIndex]
+        settings.priorityMode = priorityModes[priorityIndex]
+        priorityBtn.Text = priorityNames[priorityIndex]
 
         UpdateFilteredDictionary()
     end)
 
-    -- MIN LENGTH
-    local minRow =
-        AddSettingRow(
-            settingsContent,
-            328,
-            "Minimum length",
-            "Shortest accepted word"
-        )
+    --=====================================================
+    -- SHOW USED
+    --=====================================================
 
-    local minInput =
-        MakeInput(
-            minRow,
-            settings.minWordLength
-        )
+    local usedRow = SettingRow("Show Used Words")
 
-    minInput.Size =
-        UDim2.new(0, 60, 0, 25)
+    local usedToggle = MakeButton(usedRow,"OFF")
+    usedToggle.Size = UDim2.new(0,48,0,21)
+    usedToggle.Position = UDim2.new(1,-55,0,4)
 
-    minInput.Position =
-        UDim2.new(1, -70, 0.5, -12)
+    usedToggle.MouseButton1Click:Connect(function()
+        settings.showUsedWords = not settings.showUsedWords
+
+        usedToggle.Text = settings.showUsedWords and "ON" or "OFF"
+
+        UpdateFilteredDictionary()
+    end)
+
+    --=====================================================
+    -- BLATANT
+    --=====================================================
+
+    local blatantRow = SettingRow("Blatant Mode")
+
+    local blatantToggle = MakeButton(blatantRow,"OFF")
+    blatantToggle.Size = UDim2.new(0,48,0,21)
+    blatantToggle.Position = UDim2.new(1,-55,0,4)
+
+    blatantToggle.MouseButton1Click:Connect(function()
+        settings.blatant = not settings.blatant
+
+        blatantToggle.Text = settings.blatant and "ON" or "OFF"
+    end)
+
+    --=====================================================
+    -- RISKY
+    --=====================================================
+
+    local riskyRow = SettingRow("Risky Mistakes")
+
+    local riskyToggle = MakeButton(riskyRow,"OFF")
+    riskyToggle.Size = UDim2.new(0,48,0,21)
+    riskyToggle.Position = UDim2.new(1,-55,0,4)
+
+    riskyToggle.MouseButton1Click:Connect(function()
+        settings.riskyMistakes = not settings.riskyMistakes
+
+        riskyToggle.Text = settings.riskyMistakes and "ON" or "OFF"
+    end)
+
+    --=====================================================
+    -- LENGTH
+    --=====================================================
+
+    Section("WORD LENGTH")
+
+    local minRow = SettingRow("Minimum Length")
+
+    local minInput = MakeInput(minRow,"3")
+    minInput.Size = UDim2.new(0,48,0,21)
+    minInput.Position = UDim2.new(1,-55,0,4)
 
     minInput.FocusLost:Connect(function()
-
-        local val =
-            tonumber(minInput.Text)
+        local val = tonumber(minInput.Text)
 
         if val then
-            settings.minWordLength =
-                math.clamp(
-                    val,
-                    2,
-                    20
-                )
+            settings.minWordLength = math.clamp(val,2,20)
         end
 
-        minInput.Text =
-            tostring(
-                settings.minWordLength
-            )
+        minInput.Text = tostring(settings.minWordLength)
 
         UpdateFilteredDictionary()
     end)
 
-    -- MAX LENGTH
-    local maxRow =
-        AddSettingRow(
-            settingsContent,
-            375,
-            "Maximum length",
-            "Longest accepted word"
-        )
+    local maxRow = SettingRow("Maximum Length")
 
-    local maxInput =
-        MakeInput(
-            maxRow,
-            settings.maxWordLength
-        )
-
-    maxInput.Size =
-        UDim2.new(0, 60, 0, 25)
-
-    maxInput.Position =
-        UDim2.new(1, -70, 0.5, -12)
+    local maxInput = MakeInput(maxRow,"15")
+    maxInput.Size = UDim2.new(0,48,0,21)
+    maxInput.Position = UDim2.new(1,-55,0,4)
 
     maxInput.FocusLost:Connect(function()
-
-        local val =
-            tonumber(maxInput.Text)
+        local val = tonumber(maxInput.Text)
 
         if val then
-            settings.maxWordLength =
-                math.clamp(
-                    val,
-                    3,
-                    25
-                )
+            settings.maxWordLength = math.clamp(val,3,25)
         end
 
-        maxInput.Text =
-            tostring(
-                settings.maxWordLength
-            )
+        maxInput.Text = tostring(settings.maxWordLength)
 
         UpdateFilteredDictionary()
     end)
 
-    -- ========================================================
-    -- ADVANCED
-    -- ========================================================
+    --=====================================================
+    -- KEYBOARD
+    --=====================================================
 
-    local advancedLabel =
-        MakeSubtext(
-            settingsContent,
-            "ADVANCED",
-            7
-        )
+    Section("INPUT")
 
-    advancedLabel.Position =
-        UDim2.new(0, 10, 0, 422)
+    local keyboardRow = SettingRow("Keyboard Layout")
 
-    advancedLabel.Size =
-        UDim2.new(1, -20, 0, 15)
+    local layouts = {
+        "QWERTY",
+        "AZERTY",
+        "QWERTZ"
+    }
 
-    -- blatant
-    local blatantRow =
-        AddSettingRow(
-            settingsContent,
-            441,
-            "Blatant mode",
-            "Use faster input timing"
-        )
+    local layoutIndex = 1
 
-    local blatantToggle =
-        MakeToggle(
-            blatantRow,
-            settings.blatant,
-            function(state)
-                settings.blatant = state
-            end
-        )
+    local keyboardBtn = MakeButton(keyboardRow,"QWERTY")
+    keyboardBtn.Size = UDim2.new(0,70,0,21)
+    keyboardBtn.Position = UDim2.new(1,-77,0,4)
 
-    blatantToggle.Position =
-        UDim2.new(1, -68, 0.5, -12)
+    keyboardBtn.MouseButton1Click:Connect(function()
+        layoutIndex = layoutIndex % #layouts + 1
 
-    -- risky
-    local riskyRow =
-        AddSettingRow(
-            settingsContent,
-            488,
-            "Risky mistakes",
-            "Increase simulated errors"
-        )
+        settings.keyboardLayout = layouts[layoutIndex]
+        keyboardBtn.Text = settings.keyboardLayout
+    end)
 
-    local riskyToggle =
-        MakeToggle(
-            riskyRow,
-            settings.riskyMistakes,
-            function(state)
-                settings.riskyMistakes = state
-            end
-        )
-
-    riskyToggle.Position =
-        UDim2.new(1, -68, 0.5, -12)
-
-    -- used
-    local usedRow =
-        AddSettingRow(
-            settingsContent,
-            535,
-            "Show used words",
-            "Keep previous words visible"
-        )
-
-    local usedToggle =
-        MakeToggle(
-            usedRow,
-            settings.showUsedWords,
-            function(state)
-
-                settings.showUsedWords =
-                    state
-
-                UpdateFilteredDictionary()
-            end
-        )
-
-    usedToggle.Position =
-        UDim2.new(1, -68, 0.5, -12)
-
-    -- ========================================================
+    --=====================================================
     -- RESET
-    -- ========================================================
+    --=====================================================
 
-    local resetButton =
-        Instance.new("TextButton")
+    Section("DATA")
 
-    resetButton.Size =
-        UDim2.new(1, -18, 0, 35)
+    local resetRow = Instance.new("Frame")
+    resetRow.Size = UDim2.new(1,0,0,32)
+    resetRow.BackgroundTransparency = 1
+    resetRow.Parent = settingsContent
 
-    resetButton.Position =
-        UDim2.new(0, 9, 0, 590)
+    local resetBtn = MakeButton(resetRow,"RESET USED WORDS")
+    resetBtn.Size = UDim2.new(1,0,0,28)
+    resetBtn.Position = UDim2.new(0,0,0,2)
 
-    resetButton.BackgroundColor3 =
-        COLORS.glass3
-
-    resetButton.Text =
-        "RESET USED WORDS"
-
-    resetButton.TextColor3 =
-        COLORS.textDim
-
-    resetButton.TextSize = 9
-
-    resetButton.Font =
-        Enum.Font.GothamBold
-
-    resetButton.AutoButtonColor = false
-
-    resetButton.Parent =
-        settingsContent
-
-    MakeButton(resetButton)
-
-    resetButton.MouseButton1Click:Connect(function()
-
+    resetBtn.MouseButton1Click:Connect(function()
         usedWords = {}
 
         UpdateFilteredDictionary()
 
-        statusLabel.Text =
-            "USED WORDS RESET"
+        statusLabel.Text = "used words cleared"
 
-        task.delay(
-            1.5,
-            function()
-                if statusLabel.Parent then
-                    statusLabel.Text =
-                        "READY"
-                end
+        task.delay(1.5,function()
+            if statusLabel then
+                statusLabel.Text = "ready"
             end
-        )
+        end)
     end)
 
-    -- ========================================================
+    --=====================================================
     -- SETTINGS DRAG
-    -- ========================================================
+    --=====================================================
 
     local settingsDragging = false
     local settingsDragStart
     local settingsStartPosition
 
-    settingsHeader.InputBegan:Connect(function(input)
+    settingsTop.InputBegan:Connect(function(input)
 
-        if input.UserInputType ==
-            Enum.UserInputType.MouseButton1
-            or input.UserInputType ==
-            Enum.UserInputType.Touch then
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch then
 
             settingsDragging = true
             settingsDragStart = input.Position
-            settingsStartPosition =
-                settingsFrame.Position
+            settingsStartPosition = settingsFrame.Position
         end
     end)
 
-    settingsHeader.InputEnded:Connect(function(input)
+    settingsTop.InputEnded:Connect(function(input)
 
-        if input.UserInputType ==
-            Enum.UserInputType.MouseButton1
-            or input.UserInputType ==
-            Enum.UserInputType.Touch then
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch then
 
             settingsDragging = false
         end
@@ -2795,322 +1649,126 @@ local function CreateGUI()
 
     UserInputService.InputChanged:Connect(function(input)
 
-        if not settingsDragging then
-            return
-        end
+        if settingsDragging then
 
-        if input.UserInputType ==
-            Enum.UserInputType.MouseMovement
-            or input.UserInputType ==
-            Enum.UserInputType.Touch then
+            if input.UserInputType == Enum.UserInputType.MouseMovement
+                or input.UserInputType == Enum.UserInputType.Touch then
 
-            local delta =
-                input.Position -
-                settingsDragStart
+                local delta = input.Position - settingsDragStart
 
-            settingsFrame.Position =
-                UDim2.new(
+                settingsFrame.Position = UDim2.new(
                     settingsStartPosition.X.Scale,
                     settingsStartPosition.X.Offset + delta.X,
                     settingsStartPosition.Y.Scale,
                     settingsStartPosition.Y.Offset + delta.Y
                 )
+            end
         end
     end)
 
-    -- ========================================================
-    -- SETTINGS OPEN / CLOSE
-    -- ========================================================
+    --=====================================================
+    -- SETTINGS BUTTON
+    --=====================================================
 
     settingsBtn.MouseButton1Click:Connect(function()
-
-        settingsFrame.Visible =
-            not settingsFrame.Visible
-
-        if settingsFrame.Visible then
-
-            settingsFrame.Size =
-                UDim2.new(0, 320, 0, 470)
-
-            Tween(
-                settingsFrame,
-                {
-                    Size =
-                        UDim2.new(
-                            0,
-                            335,
-                            0,
-                            500
-                        )
-                },
-                0.2
-            )
-        end
+        settingsFrame.Visible = not settingsFrame.Visible
     end)
 
-    closeSettings.MouseButton1Click:Connect(function()
+    --=====================================================
+    -- UPDATE SUGGESTIONS
+    --=====================================================
 
-        Tween(
-            settingsFrame,
-            {
-                Size =
-                    UDim2.new(
-                        0,
-                        320,
-                        0,
-                        470
-                    )
-            },
-            0.12
-        )
+    UpdateSuggestions = function()
 
-        task.delay(
-            0.12,
-            function()
-                settingsFrame.Visible = false
-            end
-        )
-    end)
-
-    -- ========================================================
-    -- MINIMIZE
-    -- ========================================================
-
-    local minimized = false
-
-    minimizeBtn.MouseButton1Click:Connect(function()
-
-        minimized = not minimized
-
-        if minimized then
-
-            content.Visible = false
-            minimizeBtn.Text = "+"
-
-            Tween(
-                mainFrame,
-                {
-                    Size =
-                        UDim2.new(
-                            0,
-                            350,
-                            0,
-                            58
-                        )
-                },
-                0.2
-            )
-
-        else
-
-            minimizeBtn.Text = "—"
-
-            Tween(
-                mainFrame,
-                {
-                    Size =
-                        UDim2.new(
-                            0,
-                            350,
-                            0,
-                            475
-                        )
-                },
-                0.2
-            )
-
-            task.delay(
-                0.1,
-                function()
-                    content.Visible = true
-                end
-            )
-        end
-    end)
-
-    -- ========================================================
-    -- CLOSE
-    -- ========================================================
-
-    closeBtn.MouseButton1Click:Connect(function()
-
-        Tween(
-            mainFrame,
-            {
-                Size =
-                    UDim2.new(
-                        0,
-                        320,
-                        0,
-                        0
-                    )
-            },
-            0.18
-        )
-
-        task.delay(
-            0.18,
-            function()
-                screenGui:Destroy()
-            end
-        )
-    end)
-
-    -- ========================================================
-    -- SUGGESTION UPDATER
-    -- ========================================================
-
-    local function UpdateSuggestions()
-
-        if not isInitialized
-            or #filteredDictionary == 0 then
-
-            statusLabel.Text =
-                "LOADING..."
-
+        if not isInitialized or #filteredDictionary == 0 then
+            statusLabel.Text = "loading..."
             return
         end
 
-        local requiredLetter =
-            GetRequiredLetter()
+        local requiredLetter = GetRequiredLetter()
+        local currentWord = GetCurrentWord()
 
         local searchPrefix = ""
 
-        local currentWord =
-            GetCurrentWord()
+        if currentWord and #currentWord > 0 then
+            searchPrefix = currentWord
 
-        if currentWord
-            and #currentWord > 0 then
-
-            searchPrefix =
-                currentWord
-
-        elseif requiredLetter
-            and #requiredLetter > 0 then
-
-            searchPrefix =
-                requiredLetter
+        elseif requiredLetter and #requiredLetter > 0 then
+            searchPrefix = requiredLetter
 
         else
-
-            for _, data in ipairs(
-                suggestionButtons
-            ) do
-                data.button.Visible = false
+            for _,btn in ipairs(suggestionButtons) do
+                btn.Visible = false
             end
 
-            statusLabel.Text =
-                "READY"
-
-            prefixValue.Text =
-                "..."
+            statusLabel.Text = "ready"
+            prefixValue.Text = "..."
 
             wordCountLabel.Text =
-                #filteredDictionary
-                .. " words"
+                tostring(#filteredDictionary) .. " words"
 
             return
         end
 
-        prefixValue.Text =
-            '"' ..
-            searchPrefix ..
-            '"'
+        prefixValue.Text = '"' .. searchPrefix .. '"'
 
-        local suggestions =
-            GetSuggestions(
-                searchPrefix
-            )
+        local suggestions = GetSuggestions(searchPrefix)
 
-        for i, data in ipairs(
-            suggestionButtons
-        ) do
+        for i,btn in ipairs(suggestionButtons) do
 
-            local word =
-                suggestions[i]
+            if suggestions[i] then
 
-            if word then
+                local word = suggestions[i]
+                local isUsed = usedWords[word:lower()] or false
 
-                local formatted =
-                    FormatSuggestionText(
-                        word,
-                        searchPrefix
-                    )
+                local formatted
 
-                if formatted ~= "" then
-
-                    data.label.Text =
-                        formatted
-
-                    data.button:SetAttribute(
-                        "Word",
-                        word
-                    )
-
-                    data.button.Visible = true
-
+                if isUsed and settings.showUsedWords then
+                    formatted =
+                        '<font color="#999999">'
+                        .. word ..
+                        '</font>'
                 else
-                    data.button.Visible = false
+                    formatted =
+                        '<font color="#FFFFFF">'
+                        .. word ..
+                        '</font>'
                 end
 
+                btn.Text = formatted
+                btn.Visible = true
+
             else
-                data.button.Visible = false
+                btn.Visible = false
             end
         end
 
         local visibleCount = 0
 
-        for _, data in ipairs(
-            suggestionButtons
-        ) do
-            if data.button.Visible then
-                visibleCount =
-                    visibleCount + 1
+        for _,btn in ipairs(suggestionButtons) do
+            if btn.Visible then
+                visibleCount += 1
             end
         end
 
         suggestionsFrame.CanvasSize =
-            UDim2.new(
-                0,
-                0,
-                0,
-                visibleCount * 39
-            )
+            UDim2.new(0,0,0,visibleCount * 26)
 
         if #suggestions > 0 then
-
             statusLabel.Text =
-                "FOUND "
-                .. #suggestions
-                .. " WORDS"
-
+                tostring(#suggestions) .. " suggestions"
         else
-
             statusLabel.Text =
-                "NO MATCHES"
+                "no matches"
         end
 
         wordCountLabel.Text =
-            #filteredDictionary
-            .. " words"
-
-        rightInfo.Text =
-            tostring(
-                #filteredDictionary
-            )
-            .. " WORDS AVAILABLE"
+            tostring(#filteredDictionary) .. " words"
     end
 
-    -- IMPORTANT:
-    -- expose the updater so the unchanged core functions
-    -- can refresh the new GUI without altering their behavior.
-
-    _G.WordGangUpdateSuggestions =
-        UpdateSuggestions
-
-    -- ========================================================
+    --=====================================================
     -- TIMER
-    -- ========================================================
+    --=====================================================
 
     task.spawn(function()
 
@@ -3118,112 +1776,77 @@ local function CreateGUI()
 
             task.wait(1)
 
-            if timeCounterRunning
-                and screenGui.Parent then
+            if timeCounterRunning then
 
-                gameTimeCounter =
-                    gameTimeCounter + 1
+                gameTimeCounter += 1
 
                 local mins =
-                    math.floor(
-                        gameTimeCounter / 60
-                    )
+                    math.floor(gameTimeCounter / 60)
 
                 local secs =
                     gameTimeCounter % 60
 
                 timerLabel.Text =
-                    string.format(
-                        "%02d:%02d",
-                        mins,
-                        secs
-                    )
+                    string.format("%02d:%02d",mins,secs)
             end
         end
     end)
 
-    -- ========================================================
+    --=====================================================
     -- GAME TRIGGERS
-    -- ========================================================
+    --=====================================================
 
     local function SetupTriggers()
 
-        local inGameGui =
-            parent:FindFirstChild(
-                "InGame"
-            )
+        local inGameGui = parent:FindFirstChild("InGame")
 
         if not inGameGui then
 
-            parent.ChildAdded:Connect(
-                function(child)
+            parent.ChildAdded:Connect(function(child)
 
-                    if child.Name ==
-                        "InGame" then
-
-                        SetupTriggers()
-                    end
+                if child.Name == "InGame" then
+                    task.wait(0.1)
+                    SetupTriggers()
                 end
-            )
+            end)
 
             return
         end
 
         timeCounterRunning = true
 
-        local frame =
-            inGameGui:FindFirstChild(
-                "Frame"
-            )
+        local frame = inGameGui:FindFirstChild("Frame")
 
         if not frame then
             return
         end
 
         local wordFrame =
-            frame:FindFirstChild(
-                "CurrentWord"
-            )
+            frame:FindFirstChild("CurrentWord")
 
         if wordFrame then
 
-            wordFrame.ChildAdded:Connect(
-                function()
+            wordFrame.ChildAdded:Connect(function()
+                task.wait(0.05)
+                UpdateSuggestions()
+            end)
 
-                    task.wait(0.05)
-
-                    UpdateSuggestions()
-                end
-            )
-
-            wordFrame.ChildRemoved:Connect(
-                function()
-
-                    task.wait(0.05)
-
-                    UpdateSuggestions()
-                end
-            )
+            wordFrame.ChildRemoved:Connect(function()
+                task.wait(0.05)
+                UpdateSuggestions()
+            end)
         end
 
         local box =
-            frame:FindFirstChild(
-                "TextBox"
-            )
-            or frame:FindFirstChild(
-                "AnswerBox"
-            )
-            or frame:FindFirstChild(
-                "ChatInput"
-            )
+            frame:FindFirstChild("TextBox")
+            or frame:FindFirstChild("AnswerBox")
+            or frame:FindFirstChild("ChatInput")
 
         if box and box:IsA("TextBox") then
 
-            box:GetPropertyChangedSignal(
-                "Text"
-            ):Connect(
-                UpdateSuggestions
-            )
+            box:GetPropertyChangedSignal("Text"):Connect(function()
+                UpdateSuggestions()
+            end)
         end
 
         task.spawn(function()
@@ -3239,52 +1862,24 @@ local function CreateGUI()
         end)
     end
 
-    -- ========================================================
-    -- INITIALIZE
-    -- ========================================================
-
     SetupTriggers()
-
     UpdateSuggestions()
-
-    -- initial animation
-    mainFrame.Size =
-        UDim2.new(
-            0,
-            350,
-            0,
-            0
-        )
-
-    Tween(
-        mainFrame,
-        {
-            Size =
-                UDim2.new(
-                    0,
-                    350,
-                    0,
-                    475
-                )
-        },
-        0.25
-    )
 end
 
--- ============================================================
--- START
--- ============================================================
+--//========================================================
+--// START
+--//========================================================
 
 task.spawn(function()
 
-    local totalWords =
-        LoadAllDictionaries()
+    local totalWords = LoadAllDictionaries()
 
     print(
         "[WORD GANG] Loaded "
-        .. totalWords
+        .. tostring(totalWords)
         .. " words"
     )
 
     CreateGUI()
-end) 
+
+end)
