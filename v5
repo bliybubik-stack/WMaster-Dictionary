@@ -1,0 +1,986 @@
+-- Word Suggestion Prototype
+-- Uses:
+--   1. ultimate_words_v4.txt (local cached dictionary)
+--   2. Skrylor English Words
+--   3. DWYL English Words
+--
+-- Suggestion logic is based on the working prefix/binary-search
+-- approach from the script you provided.
+
+local Players = game:GetService("Players")
+local HttpService = game:GetService("HttpService")
+local UserInputService = game:GetService("UserInputService")
+
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+
+local request =
+    (syn and syn.request)
+    or (http and http.request)
+    or http_request
+    or (fluxus and fluxus.request)
+    or request
+
+local FILE_NAME = "ultimate_words_v4.txt"
+
+local DICTIONARIES = {
+    {
+        Name = "Skrylor",
+        URL = "https://raw.githubusercontent.com/skrylor/english-words/refs/heads/main/merged_english.txt"
+    },
+    {
+        Name = "DWYL",
+        URL = "https://raw.githubusercontent.com/dwyl/english-words/refs/heads/master/words_alpha.txt"
+    }
+}
+
+local SUGGESTION_COUNT = 15
+local MIN_LENGTH = 3
+local MAX_LENGTH = 20
+
+local Words = {}
+local Seen = {}
+local UsedWords = {}
+local PrefixCache = {}
+
+local CurrentPrefix = ""
+local Initialized = false
+
+local Theme = {
+    Background = Color3.fromRGB(20, 16, 27),
+    Background2 = Color3.fromRGB(28, 21, 37),
+    Item = Color3.fromRGB(39, 29, 50),
+    Accent = Color3.fromRGB(255, 20, 147),
+    AccentDark = Color3.fromRGB(175, 15, 105),
+    Text = Color3.fromRGB(245, 240, 248),
+    Muted = Color3.fromRGB(160, 145, 170),
+    Success = Color3.fromRGB(80, 230, 145),
+    Error = Color3.fromRGB(240, 75, 90)
+}
+
+--==================================================
+-- HTTP
+--==================================================
+
+local function HTTPGet(url)
+    if request then
+        local ok, result = pcall(function()
+            return request({
+                Url = url,
+                Method = "GET"
+            })
+        end)
+
+        if ok and result then
+            if result.Body then
+                return result.Body
+            end
+
+            if result.body then
+                return result.body
+            end
+        end
+    end
+
+    local ok, result = pcall(function()
+        return game:HttpGet(url)
+    end)
+
+    if ok then
+        return result
+    end
+
+    return nil
+end
+
+--==================================================
+-- LOADING GUI
+--==================================================
+
+local LoadingGui = Instance.new("ScreenGui")
+LoadingGui.Name = "WordHelperLoading"
+LoadingGui.ResetOnSpawn = false
+LoadingGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+pcall(function()
+    if gethui then
+        LoadingGui.Parent = gethui()
+    else
+        LoadingGui.Parent = PlayerGui
+    end
+end)
+
+if not LoadingGui.Parent then
+    LoadingGui.Parent = PlayerGui
+end
+
+local LoadingFrame = Instance.new("Frame")
+LoadingFrame.Size = UDim2.new(0, 330, 0, 125)
+LoadingFrame.Position = UDim2.new(0.5, -165, 0.5, -62)
+LoadingFrame.BackgroundColor3 = Theme.Background
+LoadingFrame.BorderSizePixel = 0
+LoadingFrame.Parent = LoadingGui
+
+Instance.new("UICorner", LoadingFrame).CornerRadius = UDim.new(0, 12)
+
+local LoadingStroke = Instance.new("UIStroke")
+LoadingStroke.Color = Theme.Accent
+LoadingStroke.Thickness = 2
+LoadingStroke.Transparency = 0.25
+LoadingStroke.Parent = LoadingFrame
+
+local LoadingTitle = Instance.new("TextLabel")
+LoadingTitle.Size = UDim2.new(1, -20, 0, 35)
+LoadingTitle.Position = UDim2.new(0, 10, 0, 8)
+LoadingTitle.BackgroundTransparency = 1
+LoadingTitle.Text = "WORD HELPER"
+LoadingTitle.TextColor3 = Theme.Accent
+LoadingTitle.Font = Enum.Font.GothamBold
+LoadingTitle.TextSize = 18
+LoadingTitle.Parent = LoadingFrame
+
+local LoadingStatus = Instance.new("TextLabel")
+LoadingStatus.Size = UDim2.new(1, -30, 0, 45)
+LoadingStatus.Position = UDim2.new(0, 15, 0, 48)
+LoadingStatus.BackgroundTransparency = 1
+LoadingStatus.Text = "Initializing..."
+LoadingStatus.TextColor3 = Theme.Text
+LoadingStatus.Font = Enum.Font.Gotham
+LoadingStatus.TextSize = 12
+LoadingStatus.TextWrapped = true
+LoadingStatus.Parent = LoadingFrame
+
+local function SetLoading(text, color)
+    LoadingStatus.Text = text
+
+    if color then
+        LoadingStatus.TextColor3 = color
+    else
+        LoadingStatus.TextColor3 = Theme.Text
+    end
+
+    task.wait()
+end
+
+--==================================================
+-- FETCH DICTIONARIES
+--==================================================
+
+local function SaveFile(content)
+    if not writefile then
+        return false
+    end
+
+    local ok = pcall(function()
+        writefile(FILE_NAME, content)
+    end)
+
+    return ok
+end
+
+local function LoadFile()
+    if not isfile or not readfile then
+        return nil
+    end
+
+    local ok, content = pcall(function()
+        if isfile(FILE_NAME) then
+            return readfile(FILE_NAME)
+        end
+
+        return nil
+    end)
+
+    if ok then
+        return content
+    end
+
+    return nil
+end
+
+local function ParseText(content)
+    if not content then
+        return 0
+    end
+
+    local added = 0
+
+    for line in content:gmatch("[^\r\n]+") do
+        local word = line
+            :lower()
+            :gsub("[%s%c]+", "")
+
+        if word:match("^[a-z]+$")
+            and #word >= MIN_LENGTH
+            and #word <= MAX_LENGTH
+            and not Seen[word]
+        then
+            Seen[word] = true
+            table.insert(Words, word)
+            added += 1
+        end
+    end
+
+    return added
+end
+
+local function DownloadDictionaries()
+    local combined = {}
+    local combinedSeen = {}
+
+    -- Load the exact local file first.
+    local localFile = LoadFile()
+
+    if localFile then
+        SetLoading(
+            "Loading " .. FILE_NAME .. "...",
+            Theme.Accent
+        )
+
+        for line in localFile:gmatch("[^\r\n]+") do
+            local word = line
+                :lower()
+                :gsub("[%s%c]+", "")
+
+            if word:match("^[a-z]+$")
+                and #word >= MIN_LENGTH
+                and #word <= MAX_LENGTH
+                and not combinedSeen[word]
+            then
+                combinedSeen[word] = true
+                table.insert(combined, word)
+            end
+        end
+    end
+
+    -- Fetch the two libraries.
+    for index, dictionary in ipairs(DICTIONARIES) do
+        SetLoading(
+            "Fetching library " .. index .. "/2\n" .. dictionary.Name,
+            Theme.Accent
+        )
+
+        local content = HTTPGet(dictionary.URL)
+
+        if content then
+            local added = 0
+
+            for line in content:gmatch("[^\r\n]+") do
+                local word = line
+                    :lower()
+                    :gsub("[%s%c]+", "")
+
+                if word:match("^[a-z]+$")
+                    and #word >= MIN_LENGTH
+                    and #word <= MAX_LENGTH
+                    and not combinedSeen[word]
+                then
+                    combinedSeen[word] = true
+                    table.insert(combined, word)
+                    added += 1
+                end
+            end
+
+            SetLoading(
+                dictionary.Name .. ": +" .. added .. " words",
+                Theme.Success
+            )
+        else
+            SetLoading(
+                dictionary.Name .. ": download failed",
+                Theme.Error
+            )
+        end
+    end
+
+    -- Rebuild the exact file with the merged result.
+    table.sort(combined)
+
+    local output = table.concat(combined, "\n")
+
+    if #output > 0 then
+        SaveFile(output)
+    end
+
+    Words = combined
+    Seen = {}
+
+    for _, word in ipairs(Words) do
+        Seen[word] = true
+    end
+
+    return #Words
+end
+
+--==================================================
+-- WORD INDEX
+--==================================================
+
+local function BuildIndex()
+    table.sort(Words)
+
+    PrefixCache = {}
+
+    -- Pre-create first-letter buckets.
+    local Buckets = {}
+
+    for i, word in ipairs(Words) do
+        local first = word:sub(1, 1)
+
+        if not Buckets[first] then
+            Buckets[first] = {}
+        end
+
+        table.insert(Buckets[first], i)
+    end
+
+    return Buckets
+end
+
+local Buckets = {}
+
+local function FindRange(prefix)
+    prefix = prefix:lower()
+
+    if #prefix == 0 then
+        return nil, nil
+    end
+
+    local first = prefix:sub(1, 1)
+
+    local bucket = Buckets[first]
+
+    if not bucket or #bucket == 0 then
+        return nil, nil
+    end
+
+    local low = 1
+    local high = #bucket
+    local startPosition = nil
+
+    while low <= high do
+        local middle = math.floor((low + high) / 2)
+        local word = Words[bucket[middle]]
+
+        if word < prefix then
+            low = middle + 1
+        else
+            startPosition = middle
+            high = middle - 1
+        end
+    end
+
+    if not startPosition then
+        return nil, nil
+    end
+
+    local startIndex = bucket[startPosition]
+
+    if not Words[startIndex]:sub(1, #prefix) == prefix then
+        if Words[startIndex]:sub(1, #prefix) ~= prefix then
+            return nil, nil
+        end
+    end
+
+    low = startPosition
+    high = #bucket
+
+    local endPosition = startPosition - 1
+
+    while low <= high do
+        local middle = math.floor((low + high) / 2)
+        local word = Words[bucket[middle]]
+
+        if word:sub(1, #prefix) == prefix then
+            endPosition = middle
+            low = middle + 1
+        else
+            high = middle - 1
+        end
+    end
+
+    if endPosition < startPosition then
+        return nil, nil
+    end
+
+    return bucket[startPosition], bucket[endPosition]
+end
+
+--==================================================
+-- SUGGESTION LOGIC
+--==================================================
+
+local function GetSuggestions(prefix)
+    prefix = tostring(prefix or ""):lower()
+
+    if prefix == "" then
+        return {}
+    end
+
+    if PrefixCache[prefix] then
+        return PrefixCache[prefix]
+    end
+
+    local startIndex, endIndex = FindRange(prefix)
+
+    if not startIndex then
+        PrefixCache[prefix] = {}
+        return {}
+    end
+
+    local results = {}
+
+    local maximumScan = math.min(
+        endIndex,
+        startIndex + 100
+    )
+
+    for i = startIndex, maximumScan do
+        local word = Words[i]
+
+        if word
+            and word ~= prefix
+            and #word >= MIN_LENGTH
+            and #word <= MAX_LENGTH
+            and word:match("^[a-z]+$")
+            and not UsedWords[word]
+        then
+            table.insert(results, word)
+
+            if #results >= SUGGESTION_COUNT then
+                break
+            end
+        end
+    end
+
+    PrefixCache[prefix] = results
+
+    return results
+end
+
+local function ResetUsed()
+    UsedWords = {}
+    PrefixCache = {}
+end
+
+--==================================================
+-- MAIN GUI
+--==================================================
+
+local MainGui = Instance.new("ScreenGui")
+MainGui.Name = "WordHelperPrototype"
+MainGui.ResetOnSpawn = false
+MainGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+MainGui.Parent = LoadingGui.Parent
+
+local Main = Instance.new("Frame")
+Main.Size = UDim2.new(0, 310, 0, 430)
+Main.Position = UDim2.new(0, 20, 0.5, -215)
+Main.BackgroundColor3 = Theme.Background
+Main.BorderSizePixel = 0
+Main.Parent = MainGui
+
+Instance.new("UICorner", Main).CornerRadius = UDim.new(0, 12)
+
+local MainStroke = Instance.new("UIStroke")
+MainStroke.Color = Theme.Accent
+MainStroke.Thickness = 1.5
+MainStroke.Parent = Main
+
+--==================================================
+-- TITLE
+--==================================================
+
+local Header = Instance.new("Frame")
+Header.Size = UDim2.new(1, 0, 0, 42)
+Header.BackgroundColor3 = Theme.Background2
+Header.BorderSizePixel = 0
+Header.Parent = Main
+
+Instance.new("UICorner", Header).CornerRadius = UDim.new(0, 12)
+
+local HeaderFix = Instance.new("Frame")
+HeaderFix.Size = UDim2.new(1, 0, 0, 15)
+HeaderFix.Position = UDim2.new(0, 0, 1, -15)
+HeaderFix.BackgroundColor3 = Theme.Background2
+HeaderFix.BorderSizePixel = 0
+HeaderFix.Parent = Header
+
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, -80, 1, 0)
+Title.Position = UDim2.new(0, 14, 0, 0)
+Title.BackgroundTransparency = 1
+Title.Text = "WORD HELPER"
+Title.TextColor3 = Theme.Accent
+Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.Font = Enum.Font.GothamBold
+Title.TextSize = 14
+Title.Parent = Header
+
+local Count = Instance.new("TextLabel")
+Count.Size = UDim2.new(0, 70, 1, 0)
+Count.Position = UDim2.new(1, -78, 0, 0)
+Count.BackgroundTransparency = 1
+Count.Text = "0 words"
+Count.TextColor3 = Theme.Muted
+Count.TextXAlignment = Enum.TextXAlignment.Right
+Count.Font = Enum.Font.Gotham
+Count.TextSize = 10
+Count.Parent = Header
+
+--==================================================
+-- PREFIX
+--==================================================
+
+local PrefixBox = Instance.new("Frame")
+PrefixBox.Size = UDim2.new(1, -20, 0, 46)
+PrefixBox.Position = UDim2.new(0, 10, 0, 52)
+PrefixBox.BackgroundColor3 = Theme.Background2
+PrefixBox.BorderSizePixel = 0
+PrefixBox.Parent = Main
+
+Instance.new("UICorner", PrefixBox).CornerRadius = UDim.new(0, 8)
+
+local PrefixTitle = Instance.new("TextLabel")
+PrefixTitle.Size = UDim2.new(0, 80, 0, 18)
+PrefixTitle.Position = UDim2.new(0, 10, 0, 5)
+PrefixTitle.BackgroundTransparency = 1
+PrefixTitle.Text = "PREFIX"
+PrefixTitle.TextColor3 = Theme.Muted
+PrefixTitle.Font = Enum.Font.GothamBold
+PrefixTitle.TextSize = 9
+PrefixTitle.TextXAlignment = Enum.TextXAlignment.Left
+PrefixTitle.Parent = PrefixBox
+
+local PrefixValue = Instance.new("TextLabel")
+PrefixValue.Size = UDim2.new(1, -20, 0, 22)
+PrefixValue.Position = UDim2.new(0, 10, 0, 20)
+PrefixValue.BackgroundTransparency = 1
+PrefixValue.Text = "---"
+PrefixValue.TextColor3 = Theme.Accent
+PrefixValue.Font = Enum.Font.GothamBold
+PrefixValue.TextSize = 14
+PrefixValue.TextXAlignment = Enum.TextXAlignment.Left
+PrefixValue.Parent = PrefixBox
+
+--==================================================
+-- MANUAL INPUT
+--==================================================
+
+local Input = Instance.new("TextBox")
+Input.Size = UDim2.new(1, -20, 0, 38)
+Input.Position = UDim2.new(0, 10, 0, 108)
+Input.BackgroundColor3 = Theme.Item
+Input.BorderSizePixel = 0
+Input.PlaceholderText = "Type a prefix..."
+Input.PlaceholderColor3 = Theme.Muted
+Input.Text = ""
+Input.TextColor3 = Theme.Text
+Input.Font = Enum.Font.Gotham
+Input.TextSize = 12
+Input.ClearTextOnFocus = false
+Input.Parent = Main
+
+Instance.new("UICorner", Input).CornerRadius = UDim.new(0, 8)
+
+local InputStroke = Instance.new("UIStroke")
+InputStroke.Color = Theme.AccentDark
+InputStroke.Parent = Input
+
+--==================================================
+-- STATUS
+--==================================================
+
+local Status = Instance.new("TextLabel")
+Status.Size = UDim2.new(1, -20, 0, 22)
+Status.Position = UDim2.new(0, 10, 0, 150)
+Status.BackgroundTransparency = 1
+Status.Text = "Ready"
+Status.TextColor3 = Theme.Muted
+Status.Font = Enum.Font.Gotham
+Status.TextSize = 10
+Status.TextXAlignment = Enum.TextXAlignment.Left
+Status.Parent = Main
+
+--==================================================
+-- SUGGESTION SCROLLER
+--==================================================
+
+local Suggestions = Instance.new("ScrollingFrame")
+Suggestions.Size = UDim2.new(1, -20, 0, 218)
+Suggestions.Position = UDim2.new(0, 10, 0, 174)
+Suggestions.BackgroundTransparency = 1
+Suggestions.BorderSizePixel = 0
+Suggestions.ScrollBarThickness = 3
+Suggestions.ScrollBarImageColor3 = Theme.Accent
+Suggestions.CanvasSize = UDim2.new(0, 0, 0, 0)
+Suggestions.Parent = Main
+
+local List = Instance.new("UIListLayout")
+List.SortOrder = Enum.SortOrder.LayoutOrder
+List.Padding = UDim.new(0, 4)
+List.Parent = Suggestions
+
+local Buttons = {}
+
+for i = 1, SUGGESTION_COUNT do
+    local Button = Instance.new("TextButton")
+
+    Button.Size = UDim2.new(1, 0, 0, 27)
+    Button.BackgroundColor3 = Theme.Item
+    Button.BorderSizePixel = 0
+    Button.Text = ""
+    Button.TextColor3 = Theme.Text
+    Button.Font = Enum.Font.Gotham
+    Button.TextSize = 11
+    Button.Visible = false
+    Button.AutoButtonColor = true
+    Button.Parent = Suggestions
+
+    Instance.new("UICorner", Button).CornerRadius = UDim.new(0, 6)
+
+    local Number = Instance.new("TextLabel")
+    Number.Size = UDim2.new(0, 28, 1, 0)
+    Number.BackgroundTransparency = 1
+    Number.Text = tostring(i)
+    Number.TextColor3 = Theme.Muted
+    Number.Font = Enum.Font.GothamBold
+    Number.TextSize = 9
+    Number.Parent = Button
+
+    local WordLabel = Instance.new("TextLabel")
+    WordLabel.Size = UDim2.new(1, -38, 1, 0)
+    WordLabel.Position = UDim2.new(0, 32, 0, 0)
+    WordLabel.BackgroundTransparency = 1
+    WordLabel.Text = ""
+    WordLabel.TextColor3 = Theme.Text
+    WordLabel.Font = Enum.Font.GothamMedium
+    WordLabel.TextSize = 11
+    WordLabel.TextXAlignment = Enum.TextXAlignment.Left
+    WordLabel.Parent = Button
+
+    Buttons[i] = {
+        Button = Button,
+        Label = WordLabel,
+        Word = ""
+    }
+
+    Button.MouseButton1Click:Connect(function()
+        local word = Buttons[i].Word
+
+        if word and word ~= "" then
+            UsedWords[word] = true
+
+            Input.Text = ""
+            PrefixValue.Text = "---"
+
+            PrefixCache = {}
+
+            Status.Text = "Selected: " .. word
+            Status.TextColor3 = Theme.Success
+
+            task.defer(function()
+                if CurrentPrefix ~= "" then
+                    UpdateSuggestions(CurrentPrefix)
+                else
+                    for _, item in ipairs(Buttons) do
+                        item.Button.Visible = false
+                    end
+                end
+            end)
+        end
+    end)
+end
+
+--==================================================
+-- RESET
+--==================================================
+
+local Reset = Instance.new("TextButton")
+Reset.Size = UDim2.new(0.48, 0, 0, 30)
+Reset.Position = UDim2.new(0, 10, 1, -40)
+Reset.BackgroundColor3 = Theme.Item
+Reset.BorderSizePixel = 0
+Reset.Text = "RESET USED"
+Reset.TextColor3 = Theme.Accent
+Reset.Font = Enum.Font.GothamBold
+Reset.TextSize = 9
+Reset.Parent = Main
+
+Instance.new("UICorner", Reset).CornerRadius = UDim.new(0, 7)
+
+Reset.MouseButton1Click:Connect(function()
+    ResetUsed()
+
+    Status.Text = "Used words reset"
+    Status.TextColor3 = Theme.Success
+
+    if CurrentPrefix ~= "" then
+        UpdateSuggestions(CurrentPrefix)
+    end
+end)
+
+local FileInfo = Instance.new("TextLabel")
+FileInfo.Size = UDim2.new(0.48, 0, 0, 30)
+FileInfo.Position = UDim2.new(0.52, -10, 1, -40)
+FileInfo.BackgroundTransparency = 1
+FileInfo.Text = FILE_NAME
+FileInfo.TextColor3 = Theme.Muted
+FileInfo.Font = Enum.Font.Gotham
+FileInfo.TextSize = 8
+FileInfo.TextXAlignment = Enum.TextXAlignment.Right
+FileInfo.Parent = Main
+
+--==================================================
+-- UPDATE SUGGESTIONS
+--==================================================
+
+function UpdateSuggestions(prefix)
+    if not Initialized then
+        return
+    end
+
+    prefix = tostring(prefix or ""):lower()
+    prefix = prefix:gsub("[^a-z]", "")
+
+    CurrentPrefix = prefix
+
+    PrefixValue.Text = prefix ~= "" and '"' .. prefix .. '"' or "---"
+
+    for _, item in ipairs(Buttons) do
+        item.Button.Visible = false
+        item.Word = ""
+        item.Label.Text = ""
+    end
+
+    if prefix == "" then
+        Status.Text = "Type a prefix"
+        Status.TextColor3 = Theme.Muted
+        return
+    end
+
+    local results = GetSuggestions(prefix)
+
+    for i, word in ipairs(results) do
+        if Buttons[i] then
+            Buttons[i].Word = word
+
+            local prefixPart = word:sub(1, #prefix)
+            local remaining = word:sub(#prefix + 1)
+
+            Buttons[i].Label.Text =
+                prefixPart .. remaining
+
+            Buttons[i].Button.Visible = true
+        end
+    end
+
+    Suggestions.CanvasSize = UDim2.new(
+        0,
+        0,
+        0,
+        math.max(0, #results * 31)
+    )
+
+    if #results > 0 then
+        Status.Text = "Found " .. #results .. " suggestions"
+        Status.TextColor3 = Theme.Success
+    else
+        Status.Text = "No words found"
+        Status.TextColor3 = Theme.Error
+    end
+end
+
+Input:GetPropertyChangedSignal("Text"):Connect(function()
+    local text = Input.Text:lower()
+    text = text:gsub("[^a-z]", "")
+
+    if Input.Text ~= text then
+        Input.Text = text
+    end
+
+    UpdateSuggestions(text)
+end)
+
+--==================================================
+-- OPTIONAL GAME DETECTION
+--==================================================
+
+local function GetGamePrefix()
+    local inGame = PlayerGui:FindFirstChild("InGame")
+
+    if not inGame then
+        return ""
+    end
+
+    local frame = inGame:FindFirstChild("Frame")
+
+    if not frame then
+        return ""
+    end
+
+    -- CurrentWord container
+    local currentWord = frame:FindFirstChild("CurrentWord")
+
+    if currentWord then
+        local numbered = {}
+
+        for _, child in ipairs(currentWord:GetChildren()) do
+            local index = tonumber(child.Name)
+
+            if index and child:FindFirstChild("Letter") then
+                table.insert(numbered, {
+                    index = index,
+                    object = child
+                })
+            end
+        end
+
+        table.sort(numbered, function(a, b)
+            return a.index < b.index
+        end)
+
+        local letters = {}
+
+        for _, entry in ipairs(numbered) do
+            local letter = entry.object.Letter
+
+            if letter:IsA("TextLabel")
+                or letter:IsA("TextButton")
+            then
+                local value = letter.Text or ""
+
+                if value ~= "" then
+                    table.insert(letters, value)
+                end
+            end
+        end
+
+        if #letters > 0 then
+            return table.concat(letters):lower()
+        end
+    end
+
+    local labels = {
+        "WordLabel",
+        "CurrentWordLabel",
+        "WordDisplay",
+        "Requirement",
+        "RequiredLetter",
+        "NextLetter"
+    }
+
+    for _, name in ipairs(labels) do
+        local object = frame:FindFirstChild(name)
+
+        if object and object:IsA("TextLabel") then
+            local text = object.Text or ""
+
+            local letter = text:match("([A-Za-z]+)")
+
+            if letter and letter ~= "" then
+                return letter:lower()
+            end
+        end
+    end
+
+    return ""
+end
+
+--==================================================
+-- GAME GUI WATCHER
+--==================================================
+
+task.spawn(function()
+    while task.wait(0.15) do
+        if Initialized then
+            local prefix = GetGamePrefix()
+
+            if prefix ~= "" then
+                if Input.Text == "" or Input:IsFocused() == false then
+                    UpdateSuggestions(prefix)
+                end
+            end
+        end
+    end
+end)
+
+--==================================================
+-- DRAGGING
+--==================================================
+
+local dragging = false
+local dragStart
+local startPosition
+
+Header.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch
+    then
+        dragging = true
+        dragStart = input.Position
+        startPosition = Main.Position
+    end
+end)
+
+Header.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch
+    then
+        dragging = false
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if not dragging then
+        return
+    end
+
+    if input.UserInputType ~= Enum.UserInputType.MouseMovement
+        and input.UserInputType ~= Enum.UserInputType.Touch
+    then
+        return
+    end
+
+    local delta = input.Position - dragStart
+
+    Main.Position = UDim2.new(
+        startPosition.X.Scale,
+        startPosition.X.Offset + delta.X,
+        startPosition.Y.Scale,
+        startPosition.Y.Offset + delta.Y
+    )
+end)
+
+--==================================================
+-- STARTUP
+--==================================================
+
+task.spawn(function()
+    local count = DownloadDictionaries()
+
+    SetLoading(
+        "Building word index...\n" .. count .. " words",
+        Theme.Warning
+    )
+
+    Buckets = BuildIndex()
+
+    task.wait(0.5)
+
+    Initialized = true
+
+    if LoadingGui then
+        LoadingGui:Destroy()
+    end
+
+    MainGui.Enabled = true
+
+    Count.Text = tostring(#Words) .. " words"
+    Status.Text = "Ready • " .. #Words .. " words"
+    Status.TextColor3 = Theme.Success
+
+    print("[WordHelper] Loaded " .. #Words .. " words")
+    print("[WordHelper] File: " .. FILE_NAME)
+    print("[WordHelper] Libraries: " .. #DICTIONARIES)
+end)
